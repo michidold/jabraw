@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Jabra Headset
+Comment=Status des Jabra-Headsets anzeigen, Daemon starten
+Exec=/usr/bin/jabra-media-daemon
+Icon=audio-headset
+Terminal=false
+Categories=AudioVideo;Audio;
+Keywords=Jabra;Headset;Kopfhörer;Evolve;

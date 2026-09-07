@@ -1,0 +1,6 @@
+# Jabra-Headsets und -Dongles (Vendor 0b0e).
+# Der Dateiname MUSS < 73 sein: 73-seat-late.rules übersetzt TAG+="uaccess" in
+# eine ACL für den lokal angemeldeten Benutzer. Eine Regel mit 90 läuft danach,
+# der Tag verpufft dann wirkungslos.
+KERNEL=="hidraw*", SUBSYSTEM=="hidraw", ATTRS{idVendor}=="0b0e", TAG+="uaccess"
+SUBSYSTEM=="input", KERNEL=="event*", ATTRS{idVendor}=="0b0e", TAG+="uaccess"

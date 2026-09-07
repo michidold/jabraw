@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Jabra Headset
+Comment=Medientasten und Tray-Menü für Jabra-Headsets
+Exec=/usr/bin/jabra-media-daemon
+Icon=audio-headset
+Terminal=false
+Categories=AudioVideo;Audio;
+X-GNOME-Autostart-enabled=true
+NoDisplay=true

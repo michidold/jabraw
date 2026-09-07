@@ -1,0 +1,12 @@
+#!/bin/sh
+set -e
+# uaccess wird von 73-seat-late.rules ausgewertet; die Regel liegt deshalb
+# unter 70- und muss nach der Installation einmal neu eingelesen werden.
+if [ -x /bin/udevadm ] || [ -x /sbin/udevadm ]; then
+    udevadm control --reload-rules || true
+    udevadm trigger --subsystem-match=hidraw || true
+fi
+# Gestartet wird ausschliesslich ueber /etc/xdg/autostart. Die mitgelieferte
+# systemd-User-Unit ist die Alternative fuer Desktops ohne XDG-Autostart und
+# wird deshalb bewusst NICHT aktiviert - sonst laeuft der Daemon doppelt.
+exit 0
