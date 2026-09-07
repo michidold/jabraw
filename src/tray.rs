@@ -8,6 +8,7 @@ use tokio::sync::mpsc::UnboundedSender;
 
 use crate::audio::{AudioState, Sink};
 use crate::mpris::PlayerInfo;
+use crate::i18n::strings;
 use crate::DeviceInfo;
 
 /// Vom Menü ausgelöste Wünsche. Die Callbacks laufen im Tray-Task und dürfen
@@ -49,8 +50,9 @@ fn percent(v: f32) -> String {
 }
 
 fn battery_text(level: u8, charging: bool) -> String {
+    let s = strings();
     if charging {
-        format!("{level} % (lädt)")
+        format!("{level} % ({})", s.charging_suffix)
     } else {
         format!("{level} %")
     }
@@ -65,7 +67,7 @@ impl ksni::Tray for HeadsetTray {
         match (&self.device, self.battery) {
             (Some(d), Some(p)) => format!("{d} — {}", battery_text(p, self.charging)),
             (Some(d), None) => d.clone(),
-            (None, _) => "Kein Jabra-Gerät".into(),
+            (None, _) => strings().no_device.into(),
         }
     }
 
@@ -92,16 +94,17 @@ impl ksni::Tray for HeadsetTray {
 
     fn menu(&self) -> Vec<ksni::MenuItem<Self>> {
         use ksni::menu::*;
+        let s = strings();
         let mut items: Vec<ksni::MenuItem<Self>> = Vec::new();
 
         items.push(
             StandardItem {
                 label: match (&self.device, self.battery) {
                     (Some(d), Some(p)) => {
-                        format!("{d} — Akku {}", battery_text(p, self.charging))
+                        format!("{d} — {} {}", s.battery, battery_text(p, self.charging))
                     }
-                    (Some(d), None) => format!("{d} — verbunden"),
-                    (None, _) => "Nicht verbunden".into(),
+                    (Some(d), None) => format!("{d} — {}", s.connected),
+                    (None, _) => s.not_connected.into(),
                 },
                 enabled: false,
                 ..Default::default()
@@ -127,9 +130,9 @@ impl ksni::Tray for HeadsetTray {
                 items.push(
                     StandardItem {
                         label: if p.status == "Playing" {
-                            "Pause".into()
+                            s.pause.into()
                         } else {
-                            "Wiedergabe".into()
+                            s.play.into()
                         },
                         activate: Box::new(|this: &mut Self| this.send(Cmd::PlayPause)),
                         ..Default::default()
@@ -138,7 +141,7 @@ impl ksni::Tray for HeadsetTray {
                 );
                 items.push(
                     StandardItem {
-                        label: "Vorheriger Titel".into(),
+                        label: s.previous.into(),
                         activate: Box::new(|this: &mut Self| this.send(Cmd::Previous)),
                         ..Default::default()
                     }
@@ -146,7 +149,7 @@ impl ksni::Tray for HeadsetTray {
                 );
                 items.push(
                     StandardItem {
-                        label: "Nächster Titel".into(),
+                        label: s.next.into(),
                         activate: Box::new(|this: &mut Self| this.send(Cmd::Next)),
                         ..Default::default()
                     }
@@ -155,7 +158,7 @@ impl ksni::Tray for HeadsetTray {
             }
             None => items.push(
                 StandardItem {
-                    label: "Kein Player aktiv".into(),
+                    label: s.no_player.into(),
                     enabled: false,
                     ..Default::default()
                 }
@@ -166,7 +169,7 @@ impl ksni::Tray for HeadsetTray {
 
         items.push(
             CheckmarkItem {
-                label: format!("Lautsprecher stumm ({})", percent(self.audio.sink_volume)),
+                label: format!("{} ({})", s.speaker_muted, percent(self.audio.sink_volume)),
                 checked: self.audio.sink_muted,
                 activate: Box::new(|this: &mut Self| this.send(Cmd::ToggleSinkMute)),
                 ..Default::default()
@@ -175,7 +178,7 @@ impl ksni::Tray for HeadsetTray {
         );
         items.push(
             StandardItem {
-                label: "Lauter".into(),
+                label: s.louder.into(),
                 activate: Box::new(|this: &mut Self| this.send(Cmd::Volume(5))),
                 ..Default::default()
             }
@@ -183,7 +186,7 @@ impl ksni::Tray for HeadsetTray {
         );
         items.push(
             StandardItem {
-                label: "Leiser".into(),
+                label: s.quieter.into(),
                 activate: Box::new(|this: &mut Self| this.send(Cmd::Volume(-5))),
                 ..Default::default()
             }
@@ -191,7 +194,7 @@ impl ksni::Tray for HeadsetTray {
         );
         items.push(
             CheckmarkItem {
-                label: format!("Mikrofon stumm ({})", percent(self.audio.source_volume)),
+                label: format!("{} ({})", s.mic_muted, percent(self.audio.source_volume)),
                 checked: self.audio.source_muted,
                 activate: Box::new(|this: &mut Self| this.send(Cmd::ToggleSourceMute)),
                 ..Default::default()
@@ -204,7 +207,7 @@ impl ksni::Tray for HeadsetTray {
         let selected = sinks.iter().position(|s| s.is_default).unwrap_or(0);
         items.push(
             SubMenu {
-                label: "Ausgabegerät".into(),
+                label: s.output_device.into(),
                 enabled: !sinks.is_empty(),
                 submenu: vec![RadioGroup {
                     selected,
@@ -231,7 +234,7 @@ impl ksni::Tray for HeadsetTray {
 
         items.push(
             StandardItem {
-                label: "Geräteinformationen …".into(),
+                label: s.device_info.into(),
                 enabled: self.device.is_some(),
                 activate: Box::new(|this: &mut Self| this.send(Cmd::ShowInfo)),
                 ..Default::default()
@@ -242,7 +245,7 @@ impl ksni::Tray for HeadsetTray {
 
         items.push(
             StandardItem {
-                label: "Beenden".into(),
+                label: s.quit.into(),
                 icon_name: "application-exit".into(),
                 activate: Box::new(|this: &mut Self| this.send(Cmd::Quit)),
                 ..Default::default()

@@ -2,6 +2,7 @@ mod audio;
 mod bluetooth;
 mod gnp;
 mod hid;
+mod i18n;
 mod mpris;
 mod tray;
 
@@ -12,6 +13,7 @@ use ksni::TrayMethods;
 use tokio::sync::mpsc;
 
 use audio::Target;
+use i18n::strings;
 use std::io::Write;
 use hid::{Action, Msg};
 use tray::{Cmd, HeadsetTray};
@@ -49,20 +51,21 @@ async fn notify_status(conn: &zbus::Connection) {
     let state = audio::read_levels().await;
     let player = mpris::active_player(conn).await;
 
+    let s = strings();
+    let level = |v: f32, muted: bool| {
+        let p = (v * 100.0).round() as i32;
+        if muted {
+            format!("{p} % ({})", s.muted_suffix)
+        } else {
+            format!("{p} %")
+        }
+    };
     let mut body = vec![match &device {
-        Some(d) => format!("{d}: verbunden"),
-        None => "Kein Jabra-Gerät gefunden".to_string(),
+        Some(d) => format!("{d}: {}", s.connected),
+        None => s.none_found.to_string(),
     }];
-    body.push(format!(
-        "Lautsprecher {}{}",
-        (state.sink_volume * 100.0).round() as i32,
-        if state.sink_muted { "% (stumm)" } else { "%" }
-    ));
-    body.push(format!(
-        "Mikrofon {}{}",
-        (state.source_volume * 100.0).round() as i32,
-        if state.source_muted { "% (stumm)" } else { "%" }
-    ));
+    body.push(format!("{}: {}", s.speaker, level(state.sink_volume, state.sink_muted)));
+    body.push(format!("{}: {}", s.microphone, level(state.source_volume, state.source_muted)));
     if let Some(p) = player {
         body.push(match p.track {
             Some(t) => format!("{}: {t}", p.identity),
@@ -113,26 +116,32 @@ async fn show_device_info(info: &DeviceInfo, battery: Option<u8>, charging: bool
         Some(v) => format!("{label}: {v}\n"),
         None => String::new(),
     };
+    let s = strings();
     let mut text = String::new();
-    text.push_str("Headset\n");
-    text.push_str(&line("  Modell", &info.headset_name));
-    text.push_str(&line("  Firmware", &info.headset_version));
-    text.push_str(&line("  Seriennummer", &info.headset_serial));
+    text.push_str(&format!("{}\n", s.headset));
+    text.push_str(&line(&format!("  {}", s.model), &info.headset_name));
+    text.push_str(&line(&format!("  {}", s.firmware), &info.headset_version));
+    text.push_str(&line(&format!("  {}", s.serial), &info.headset_serial));
     if let Some(p) = battery {
         text.push_str(&format!(
-            "  Akku: {p} %{}\n",
-            if charging { " (lädt)" } else { "" }
+            "  {}: {p} %{}\n",
+            s.battery,
+            if charging {
+                format!(" ({})", s.charging_suffix)
+            } else {
+                String::new()
+            }
         ));
     }
     // Ohne Dongle bleibt der Abschnitt leer; über Bluetooth kennt BlueZ nur
     // Name und Akkustand.
     if info.dongle_name.is_some() || info.dongle_version.is_some() {
-        text.push_str("\nDongle\n");
-        text.push_str(&line("  Modell", &info.dongle_name));
-        text.push_str(&line("  Firmware", &info.dongle_version));
-        text.push_str(&line("  Seriennummer", &info.dongle_serial));
+        text.push_str(&format!("\n{}\n", s.dongle));
+        text.push_str(&line(&format!("  {}", s.model), &info.dongle_name));
+        text.push_str(&line(&format!("  {}", s.firmware), &info.dongle_version));
+        text.push_str(&line(&format!("  {}", s.serial), &info.dongle_serial));
     } else {
-        text.push_str("\nÜber Bluetooth verbunden — Firmware und Seriennummer\n                       liefert nur der USB-Dongle.\n");
+        text.push_str(&format!("\n{}\n", s.bluetooth_note));
     }
 
     let attempts: [(&str, Vec<String>); 2] = [
