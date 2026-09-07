@@ -21,8 +21,8 @@ use std::io::Write;
 use hid::{Action, Msg};
 use tray::{Cmd, HeadsetTray};
 
-/// Was über Dongle und Headset bekannt ist. Beide hängen am selben
-/// hidraw-Knoten und werden über die GNP-Zieladresse auseinandergehalten.
+/// What is known about dongle and headset. Both sit behind the same hidraw
+/// node and are told apart by the GNP destination address.
 #[derive(Default, Clone, PartialEq)]
 pub struct DeviceInfo {
     pub dongle_name: Option<String>,
@@ -33,22 +33,22 @@ pub struct DeviceInfo {
     pub headset_serial: Option<String>,
 }
 
-/// Offene GNP-Anfrage, über die Sequenznummer der Antwort zugeordnet.
+/// An outstanding GNP request, matched to its reply by sequence number.
 enum Pending {
     Battery,
     Ident { dst: u8, sub: u8 },
 }
 
-/// Takt für Geräte-Rescan und Auffrischen der Tray-Anzeige.
+/// Tick for device rescan and refreshing the tray.
 const REFRESH_INTERVAL: Duration = Duration::from_secs(2);
-/// Akkuabfrage alle 30 s, also jeden 15. Durchlauf.
+/// Battery every 30 s, that is every 15th tick.
 const BATTERY_EVERY_N_TICKS: u32 = 15;
-/// Ausgabegeräte alle 20 s neu einlesen; zusätzlich beim Öffnen des Menüs.
+/// Output devices every 20 s, and again when the menu opens.
 const SINKS_EVERY_N_TICKS: u32 = 10;
-/// BlueZ alle 10 s befragen; der Akkustand über HFP ändert sich nur grob.
+/// Ask BlueZ every 10 s; the HFP charge level only moves in coarse steps.
 const BLUETOOTH_EVERY_N_TICKS: u32 = 5;
 
-/// Kurzer Statusbericht als Desktop-Benachrichtigung.
+/// A short status report as a desktop notification.
 async fn notify_status(conn: &zbus::Connection) {
     let device = hid::present();
     let state = audio::read_levels().await;
@@ -79,7 +79,7 @@ async fn notify_status(conn: &zbus::Connection) {
     notify(&body.join("\n")).await;
 }
 
-/// Desktop-Benachrichtigung, auch als Rückfall für den Infodialog.
+/// Desktop notification, also the fallback for the dialogs.
 async fn notify(body: &str) {
     let Ok(conn) = zbus::Connection::session().await else {
         return;
@@ -112,12 +112,12 @@ async fn notify(body: &str) {
         .await;
 }
 
-/// Jahr der ersten Veröffentlichung; ein mitlaufendes Jahr wäre für einen
-/// Urheberrechtsvermerk falsch.
+/// Year of first publication. A year that follows the clock would state
+/// something untrue in a copyright notice.
 const COPYRIGHT_YEAR: &str = "2026";
 
-/// Kleiner Infodialog. Der Daemon bringt keine GUI mit, deshalb über das
-/// Dialogwerkzeug des Desktops; ohne eines davon bleibt die Benachrichtigung.
+/// Small information dialog. The daemon ships no GUI, so this goes through the
+/// desktop's dialog tool; without one, the notification is left.
 async fn show_device_info(info: &DeviceInfo, battery: Option<u8>, charging: bool) {
     let line = |label: &str, v: &Option<String>| match v {
         Some(v) => format!("{label}: {v}\n"),
@@ -140,22 +140,22 @@ async fn show_device_info(info: &DeviceInfo, battery: Option<u8>, charging: bool
             }
         ));
     }
-    // Ohne Dongle bleibt der Abschnitt leer; über Bluetooth kennt BlueZ nur
-    // Name und Akkustand.
+    // Without a dongle the section stays empty; over Bluetooth BlueZ alone
+    // knows only name and charge level.
     if info.dongle_name.is_some() || info.dongle_version.is_some() {
         text.push_str(&format!("\n{}\n", s.dongle));
         text.push_str(&line(&format!("  {}", s.model), &info.dongle_name));
         text.push_str(&line(&format!("  {}", s.firmware), &info.dongle_version));
         text.push_str(&line(&format!("  {}", s.serial), &info.dongle_serial));
     } else if info.headset_version.is_none() {
-        // Nur wenn gar kein GNP-Kanal steht; mit RFCOMM liefert auch Bluetooth
-        // Firmware, Seriennummer und Ladezustand.
+        // Only when no GNP channel exists at all; over RFCOMM Bluetooth
+        // supplies firmware, serial number and charging state as well.
         text.push_str(&format!("\n{}\n", s.bluetooth_note));
     }
-    // Eigene Version mit anzeigen: sonst ist von außen nicht erkennbar, welcher
-    // Stand tatsächlich läuft, wenn Autostart ein älteres Paket startet.
-    // Urheber und Lizenz kommen aus Cargo.toml, damit beides nicht auseinander
-    // läuft; die Repository-Adresse macht die Lizenzangabe nachschlagbar.
+    // Show our own version: otherwise there is no way to tell which build is
+    // actually running when autostart launches an older package. Holder and
+    // licence come from Cargo.toml so the two cannot drift apart, and the
+    // repository address is what makes the licence followable.
     let author = env!("CARGO_PKG_AUTHORS")
         .split('<')
         .next()
@@ -174,7 +174,7 @@ async fn show_device_info(info: &DeviceInfo, battery: Option<u8>, charging: bool
             vec![
                 "--info".into(),
                 "--title=Jabraw".into(),
-                // Dasselbe Symbol wie im Tray, sofern das Paket installiert ist.
+                // Same icon as the tray, provided the package is installed.
                 "--icon=jabraw".into(),
                 "--no-wrap".into(),
                 format!("--text={text}"),
@@ -209,7 +209,7 @@ async fn config_via_hidraw(path: String) -> Vec<config::Setting> {
     }
 }
 
-/// Übersicht der Geräteeinstellungen als Tabelle.
+/// Overview of the device settings as a table.
 async fn show_settings(settings: Vec<config::Setting>) {
     let s = strings();
     if settings.is_empty() {
@@ -217,16 +217,16 @@ async fn show_settings(settings: Vec<config::Setting>) {
         return;
     }
 
-    // Kein --icon: zenity kennt die Option nur beim Info-Dialog und lehnt den
-    // Aufruf mit --list andernfalls ab.
+    // No --icon: zenity knows the option for the info dialog only and rejects
+    // the call outright with --list.
     let mut args = vec![
         "--list".to_string(),
         "--title=Jabraw".to_string(),
         format!("--text={}", s.settings.trim_end_matches(" …")),
         "--width=520".to_string(),
         "--height=560".to_string(),
-        // Kein leerer Spaltenname: zenity 4 kehrt dann sofort mit der ersten
-        // Zeile zurueck, statt den Dialog anzuzeigen.
+        // No empty column title: zenity 4 then returns the first row
+        // immediately instead of showing the dialog.
         "--column".to_string(),
         s.device_col.to_string(),
         "--column".to_string(),
@@ -252,8 +252,8 @@ async fn show_settings(settings: Vec<config::Setting>) {
     }
 }
 
-/// Einzelbytes 0 und 1 sind durchweg Schalter; alles andere bleibt roh, weil
-/// die Bedeutung je Einstellung anders und undokumentiert ist.
+/// Single bytes 0 and 1 are switches throughout; anything else stays raw,
+/// because the meaning differs per setting and is undocumented.
 fn format_value(data: &[u8]) -> String {
     let s = strings();
     match data {
@@ -287,8 +287,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
-    // Vom Bauskript genutzt, um die Symbole für die Anwendungsübersicht zu
-    // erzeugen; dieselbe Zeichnung wie im Tray.
+    // Used by the build script to generate the application menu icons, from the
+    // same drawing as the tray.
     if let Some(dir) = arg_value("--write-icons") {
         for size in [16u32, 24, 32, 48, 64, 128, 256] {
             let path = format!("{dir}/{size}x{size}.png");
@@ -302,20 +302,20 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
     let debug = std::env::args().any(|a| a == "--debug");
-    // Monotone Laufzeit statt Uhrzeit: gemessen werden Abstände, nicht Termine.
+    // Monotonic runtime rather than wall clock: what matters are intervals.
     let started = std::time::Instant::now();
     let no_tray = std::env::args().any(|a| a == "--no-tray");
     let conn = zbus::Connection::session().await?;
-    // BlueZ hängt am System-Bus. Fehlt er, bleibt nur der USB-Pfad.
+    // BlueZ lives on the system bus. Without it only the USB path remains.
     let system = zbus::Connection::system().await.ok();
     if system.is_none() {
         eprintln!("kein System-Bus erreichbar — Bluetooth-Geräte bleiben unsichtbar");
     }
 
-    // Einzelinstanz-Sperre. Zwei Daemons lesen beide hidraw und schicken jeden
-    // Tastendruck doppelt an MPRIS — Play unmittelbar gefolgt von Pause, also
-    // sichtbar gar nichts. Der Name ist billiger und zuverlässiger als eine
-    // PID-Datei, weil D-Bus ihn beim Prozessende selbst freigibt.
+    // Single-instance lock. Two daemons would both read hidraw and send every
+    // key press to MPRIS twice — play immediately followed by pause, so nothing
+    // visible. The name is cheaper and more reliable than a PID file, because
+    // D-Bus releases it when the process ends.
     match conn
         .request_name_with_flags(
             "io.github.michidold.Jabraw",
@@ -324,12 +324,12 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
         .await
     {
         Ok(zbus::fdo::RequestNameReply::PrimaryOwner) => {}
-        // Bei DoNotQueue meldet zbus einen belegten Namen als Fehler, nicht als
-        // Rückgabewert. Sauberes Ende mit 0, damit Autostart und systemd das
-        // nicht als Absturz werten und neu starten.
+        // With DoNotQueue zbus reports a taken name as an error rather than a
+        // return value. Exit cleanly with 0 so autostart and systemd do not
+        // treat it as a crash and restart.
         Ok(_) | Err(zbus::Error::NameTaken) => {
-            // Aufruf über den Menüeintrag bei schon laufendem Daemon: statt
-            // wortlos zu enden, den aktuellen Zustand melden.
+            // Invoked from the menu entry while a daemon already runs: report
+            // the current state instead of ending without a word.
             eprintln!("jabraw läuft bereits — zeige Status");
             notify_status(&conn).await;
             return Ok(());
@@ -340,7 +340,7 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
     let (hid_tx, mut hid_rx) = mpsc::unbounded_channel::<Msg>();
     let (cmd_tx, mut cmd_rx) = mpsc::unbounded_channel::<Cmd>();
 
-    // Schreibende Kopien der Geraete-Handles fuer GNP-Anfragen.
+    // Writable copies of the device handles, for GNP requests.
     let mut writers: HashMap<String, std::fs::File> = HashMap::new();
     let mut battery: Option<u8> = None;
     let mut charging = false;
@@ -350,15 +350,15 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
     let mut bt_path: Option<String> = None;
     let mut session: Option<rfcomm::Session> = None;
     let mut seq: u8 = 0;
-    // Ordnet Antworten den eigenen Anfragen zu; das Gerät sendet auf diesem
-    // Kanal auch unaufgefordert.
+    // Matches replies to our own requests; the device also sends on this
+    // channel unprompted.
     let mut pending: HashMap<u8, Pending> = HashMap::new();
     let mut ticks: u32 = 0;
 
     let mut watched: HashSet<String> = HashSet::new();
     let mut names: HashMap<String, String> = HashMap::new();
     let mut warned: HashSet<String> = HashSet::new();
-    // Vorheriger Bitzustand je (Gerät, Report), um Flanken zu erkennen.
+    // Previous bit state per (device, report), to detect edges.
     let mut state: HashMap<(String, u8), u32> = HashMap::new();
 
     let tray = if no_tray {
@@ -379,8 +379,8 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
         {
             Ok(h) => Some(h),
             Err(e) => {
-                // Ohne SNI-Host (etwa GNOME ohne AppIndicator-Erweiterung) bleibt
-                // die Tastensteuerung trotzdem nutzbar.
+                // Without an SNI host — GNOME lacking the AppIndicator
+                // extension, say — the key handling stays usable.
                 eprintln!("Tray nicht verfügbar, laufe ohne Menü: {e}");
                 None
             }
@@ -396,7 +396,7 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
                     bt = None;
                     info = DeviceInfo::default();
                     if let Ok(mut w) = file.try_clone() {
-                        // Gerätedaten ändern sich nicht; einmal beim Anstecken.
+                        // Device data does not change; ask once on connect.
                         for (dst, sub) in [
                             (gnp::DST_DONGLE, gnp::SUB_NAME),
                             (gnp::DST_DONGLE, gnp::SUB_VERSION),
@@ -418,8 +418,8 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
                     hid::spawn_reader(path, file, hid_tx.clone());
                 }
 
-                // Akkustand seltener als die uebrige Anzeige abfragen; er
-                // aendert sich in Prozentschritten.
+                // Battery less often than the rest of the display; it moves in
+                // whole percent.
                 if ticks.is_multiple_of(BATTERY_EVERY_N_TICKS) {
                     seq = seq.wrapping_add(1);
                     let req = gnp::read_request(
@@ -434,10 +434,10 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
                     pending.insert(seq, Pending::Battery);
                 }
 
-                // Ohne Dongle gibt es keinen GNP-Kanal. Was BlueZ über ein
-                // direkt gekoppeltes Headset weiß, ist dann alles, was bleibt:
-                // Name und Akkustand. Die Tasten laufen in dem Betrieb über
-                // AVRCP und werden vom Desktop schon an MPRIS gereicht.
+                // Without a dongle there is no GNP channel over USB. What
+                // BlueZ knows about a directly paired headset is the starting
+                // point; the keys travel over AVRCP in that mode and the
+                // desktop passes them to MPRIS already.
                 if watched.is_empty() {
                     if ticks.is_multiple_of(BLUETOOTH_EVERY_N_TICKS) {
                         bt = match &system {
@@ -447,8 +447,8 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
                         bt_path = bt.as_ref().map(|d| d.path.clone());
                     }
                     battery = bt.as_ref().and_then(|d| d.battery);
-                    // HFP kennt keinen Ladezustand; über RFCOMM kommt er weiter
-                    // unten aus der GNP-Antwort.
+                    // HFP carries no charging state; over RFCOMM it arrives
+                    // further down from the GNP reply.
                     charging = false;
                     info = match &bt {
                         Some(d) => DeviceInfo {
@@ -458,8 +458,8 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
                         None => DeviceInfo::default(),
                     };
 
-                    // GNP über RFCOMM liefert genauere Werte als der grobe
-                    // HFP-Indikator, dazu Firmware und Seriennummer.
+                    // GNP over RFCOMM is more precise than the coarse HFP
+                    // indicator, and adds firmware and serial number.
                     if bt.is_none() {
                         session = None;
                     } else if session.is_none() {
@@ -497,16 +497,16 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
                                 }
                                 charging = gnp::battery_charging(d);
                             }
-                            // Bleibt alles stumm, ist die Verbindung tot.
+                            // If everything stays silent, the link is dead.
                             session = any.then_some(s);
                         }
                     }
                 }
                 ticks = ticks.wrapping_add(1);
                 if let Some(handle) = &tray {
-                    // Der Akkustand gehört dem Headset, nicht dem Dongle —
-                    // also auch den Namen des Headsets zeigen, sobald er über
-                    // ident bekannt ist. Sonst der Name des USB-Geräts.
+                    // The charge belongs to the headset, not the dongle, so
+                    // show the headset's name as soon as ident has supplied it.
+                    // Otherwise the name of the USB device.
                     let device = info
                         .headset_name
                         .clone()
@@ -542,8 +542,8 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
                 Cmd::SetSink(id) => audio::set_default_sink(id).await,
                 Cmd::ShowInfo => show_device_info(&info, battery, charging).await,
                 Cmd::ShowSettings => {
-                    // Über hidraw, wenn ein Dongle steckt; sonst über die
-                    // bestehende RFCOMM-Sitzung.
+                    // Over hidraw when a dongle is plugged in, otherwise
+                    // through the existing RFCOMM session.
                     if let Some(path) = watched.iter().next().cloned() {
                         show_settings(config_via_hidraw(path).await).await;
                     } else if let Some(mut s) = session.take() {
@@ -562,8 +562,8 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
                         }
                     }
                 }
-                // Beim Öffnen des Menüs die Geräteliste auffrischen, damit das
-                // seltene Abfrageintervall nicht zu veralteten Einträgen führt.
+                // Refresh the device list when the menu opens, so the rare
+                // polling interval cannot leave stale entries.
                 Cmd::Refresh => sinks = audio::list_sinks().await,
                 Cmd::Quit => {
                     if let Some(handle) = &tray {
@@ -627,8 +627,8 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
                                 _ => {}
                             }
                         }
-                        // Unbeantwortetes sammelt sich sonst bis zum Überlauf
-                        // der Sequenznummer an.
+                        // Unanswered requests would otherwise pile up until
+                        // the sequence number wraps.
                         if pending.len() > 64 {
                             pending.clear();
                         }

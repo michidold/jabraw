@@ -1,12 +1,12 @@
-//! Prototyp: RFCOMM-Verbindung zum Headset über BlueZ' Profil-API.
+//! Prototype: RFCOMM connection to the headset through BlueZ's profile API.
 //!
-//! SDP-Abfragen liefern bei verbundenem Gerät nichts, deshalb übernimmt BlueZ
-//! die Kanalsuche: Wir registrieren ein Profil für die Serial-Port-UUID und
-//! bekommen beim Verbinden einen Dateideskriptor zurückgereicht.
+//! SDP queries return nothing while the device is connected, so BlueZ does the
+//! channel finding: a profile for the Serial Port UUID is registered and a file
+//! descriptor comes back on connect.
 //!
-//! Gesendet wird ausschließlich `ident/version`: ein Lesekommando, das über USB
-//! vielfach verifiziert ist. Kein Schreibzugriff, nichts aus den Firmware-
-//! Gruppen. Unbekannt ist allein die Rahmung über RFCOMM.
+//! Sends `ident/version` and nothing else: a read command verified many times
+//! over USB. No writes, nothing from the firmware groups. The only unknown is
+//! the framing over RFCOMM.
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -46,12 +46,12 @@ impl Profile {
     }
 }
 
-/// Varianten der Rahmung durchprobieren, jeweils nur mit `ident/version`.
+/// Try the framing variants, each with nothing but `ident/version`.
 fn probe(fd: std::os::fd::OwnedFd) {
     use std::io::{Read, Write};
     let mut file = std::fs::File::from(fd);
-    // Adresse 0x04 ist das Headset; 0x01 gibt es ohne Dongle nicht und
-    // beantwortet Anfragen mit nack (Typ 254).
+    // Address 0x04 is the headset; 0x01 does not exist without a dongle and
+    // answers requests with nack (type 254).
     let variants: [(&str, Vec<u8>); 6] = [
         ("ident/name", vec![0x04, 0x00, 0x41, 0x46, 0x02, 0x00]),
         ("ident/serial", vec![0x04, 0x00, 0x42, 0x46, 0x02, 0x01]),

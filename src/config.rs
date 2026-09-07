@@ -1,13 +1,12 @@
-//! Auslesen der Geräteeinstellungen über die GNP-Gruppe `config`.
+//! Reading device settings through the GNP group `config`.
 //!
-//! Jabras SDK kennt 212 Subcommands; welche davon ein Gerät beantwortet, hängt
-//! vom Modell ab. Der Daemon fragt deshalb eine feste Liste bekannter
-//! Einstellungen ab und zeigt, was zurückkommt — ein Headset ohne ANC
-//! beantwortet `anc` einfach nicht, und die Zeile fehlt dann. Das kommt ohne
-//! Modellerkennung aus.
+//! Jabra's SDK knows 212 subcommands, and which of them a device answers
+//! depends on the model. The daemon therefore asks a fixed list of known
+//! settings and shows what comes back — a headset without ANC simply does not
+//! answer `anc`, and that row is missing. This works without model detection.
 //!
-//! Ausschließlich lesend. Dieselben Subcommands ließen sich beschreiben, was
-//! Geräteeinstellungen dauerhaft verändern würde.
+//! Reading only. The same subcommands could be written, which would change
+//! device settings for good.
 
 use std::io::{Read, Write};
 use std::os::fd::AsRawFd;
@@ -15,9 +14,9 @@ use std::time::{Duration, Instant};
 
 use crate::gnp;
 
-/// Bekannte, für Anwender bedeutsame Einstellungen. Andere Subcommands der
-/// Gruppe sind Betriebsdaten (Uhrzeit, Feature-Masken, Passwortfelder) und
-/// gehören nicht in eine Übersicht.
+/// Settings that mean something to a user. Other subcommands in the group are
+/// operational data — clock, feature masks, password fields — and do not belong
+/// in an overview.
 pub const SETTINGS: &[(u8, &str)] = &[
     (0, "audioType"),
     (1, "intellitoneLevel"),
@@ -77,7 +76,7 @@ pub const SETTINGS: &[(u8, &str)] = &[
     (188, "callAcceptedSound"),
 ];
 
-/// Wandelt die Antworten einer RFCOMM-Abfrage in Anzeigezeilen.
+/// Turns the replies of an RFCOMM sweep into display rows.
 pub fn from_sweep(rows: Vec<(&'static str, Vec<u8>)>) -> Vec<Setting> {
     rows.into_iter()
         .map(|(name, value)| Setting {
@@ -94,14 +93,14 @@ pub struct Setting {
     pub value: Vec<u8>,
 }
 
-/// Wartezeit auf Antworten, nachdem alle Anfragen abgesetzt sind.
+/// How long to wait for replies once every request has gone out.
 const COLLECT: Duration = Duration::from_millis(1200);
 
-/// Fragt beide Adressen ab. Blockierend — gehört in `spawn_blocking`.
+/// Queries both addresses. Blocking — belongs in `spawn_blocking`.
 ///
-/// Es wird ein eigener Deskriptor geöffnet statt des Lese-Threads: hidraw
-/// liefert eingehende Reports an jeden offenen Deskriptor, die Abfrage stört
-/// den laufenden Tastenpfad also nicht.
+/// Opens its own descriptor rather than using the reader thread: hidraw hands
+/// incoming reports to every open descriptor, so the query leaves the running
+/// key path undisturbed.
 pub fn read_all(path: &str) -> std::io::Result<Vec<Setting>> {
     let mut file = std::fs::OpenOptions::new().read(true).write(true).open(path)?;
     let mut out = Vec::new();
@@ -118,7 +117,7 @@ fn sweep(
 ) -> std::io::Result<Vec<Setting>> {
     let mut pending = std::collections::HashMap::new();
     for (i, (sub, name)) in SETTINGS.iter().enumerate() {
-        // Sequenz 0 vermeiden, damit sie sich von einem leeren Report abhebt.
+        // Avoid sequence 0 so it stands apart from an empty report.
         let seq = (i as u8).wrapping_add(1).max(1);
         file.write_all(&gnp::read_request(dst, seq, gnp::CMD_CONFIG, *sub))?;
         pending.insert(seq, *name);
@@ -154,7 +153,7 @@ fn sweep(
     Ok(found)
 }
 
-/// `poll(2)` auf den Deskriptor, damit ein stummes Gerät nicht blockiert.
+/// `poll(2)` on the descriptor, so a silent device does not block.
 fn readable(file: &std::fs::File, timeout: Duration) -> bool {
     let mut fds = libc::pollfd {
         fd: file.as_raw_fd(),

@@ -1,10 +1,10 @@
-//! Rohzugriff auf die Jabra-hidraw-Nodes.
+//! Raw access to the Jabra hidraw nodes.
 //!
-//! Der Umweg über hidraw ist nötig, weil die Multifunktionstaste im
-//! Report-Descriptor des Link 380 als `81 07` deklariert ist. Bit 0 dieses
-//! Input-Flags bedeutet Constant, und `hid-input.c` überspringt konstante
-//! Felder — der Kernel legt dafür also keinen Tastencode an. Über evdev ist die
-//! Taste damit unerreichbar, im Rohreport steht sie klar drin.
+//! The detour through hidraw is necessary because the Link 380 declares the
+//! multi-function button as `81 07` in its report descriptor. Bit 0 of that
+//! input flag means Constant, and `hid-input.c` skips constant fields, so the
+//! kernel allocates no key code for it. Over evdev the button is unreachable
+//! for that reason, while the raw report states it plainly.
 
 use std::collections::HashSet;
 use std::io::Read;
@@ -18,27 +18,26 @@ pub enum Msg {
     Closed(String),
 }
 
-/// Aktionen, die der Daemon aus einem Bitwechsel ableitet.
+/// Actions the daemon derives from a bit change.
 pub enum Action {
-    /// MPRIS-Methode, ausgelöst auf der steigenden Flanke.
+    /// MPRIS method, triggered on the rising edge.
     Mpris(&'static str),
 }
 
-/// Nur die Bits, die der Kernel wegen des Constant-Flags verwirft. Alles, was
-/// als `KEY_*` ankommt — insbesondere die Lautstärke —, verarbeitet der Desktop
-/// bereits; würde es hier nochmal auftauchen, löste jede Taste doppelt aus.
+/// Only the bits the kernel discards over the constant flag. Anything arriving
+/// as `KEY_*` — the volume rocker above all — is handled by the desktop
+/// already; repeating it here would fire every key twice.
 ///
-/// Die Multifunktionstaste schickt abwechselnd Pause (Bit 9) und Play (Bit 10),
-/// je nachdem was das Headset für den Zustand hält. Beide auf PlayPause
-/// abzubilden ist robuster als die wörtliche Übersetzung: läuft die Annahme des
-/// Headsets aus dem Tritt, bliebe ein wörtliches "Pause" auf einem bereits
-/// pausierten Player wirkungslos.
+/// The multi-function button alternates between Pause (bit 9) and Play
+/// (bit 10), following whatever state the headset assumes. Mapping both to
+/// PlayPause is sturdier than the literal translation: once that assumption
+/// drifts, a literal "Pause" on an already paused player would do nothing.
 pub fn action_for(report: u8, bit: u32) -> Option<Action> {
     match (report, bit) {
         (1, 9) | (1, 10) => Some(Action::Mpris("PlayPause")),
-        // Report 2 Bit 2 (Line) wechselt zusammen mit dem Wiedergabezustand,
-        // nicht mit dem Mikroarm — belegt man es, schaltet jeder Tastendruck
-        // zusätzlich etwas anderes. Der Arm meldet sich auf hidraw gar nicht.
+        // Report 2 bit 2 (Line) tracks playback state rather than the boom
+        // arm; mapping it would make every key press toggle something else as
+        // well. The arm reports nothing over hidraw at all.
         _ => None,
     }
 }
@@ -63,7 +62,7 @@ pub fn bit_name(report: u8, bit: u32) -> &'static str {
         (2, 5) => "Redial",
         (2, 6) => "SpeedDial",
         (2, 11) => "ProgrammableButton",
-        // Report 4 spiegelt Report 2 auf einer Vendor-Page, ein Bit versetzt.
+        // Report 4 mirrors report 2 on a vendor page, offset by one bit.
         (4, 0) => "HookSwitch (vendor)",
         (4, 3) => "Line (Streamstatus, vendor)",
         (4, 4) => "PhoneMute (vendor)",
@@ -71,7 +70,7 @@ pub fn bit_name(report: u8, bit: u32) -> &'static str {
     }
 }
 
-/// Die ersten vier Nutzbytes eines Reports als Bitfeld.
+/// The first four payload bytes of a report as a bit field.
 pub fn payload_bits(data: &[u8]) -> u32 {
     let mut bits = 0u32;
     for (i, b) in data.iter().skip(1).take(4).enumerate() {
@@ -80,7 +79,7 @@ pub fn payload_bits(data: &[u8]) -> u32 {
     bits
 }
 
-/// Name des Geräts hinter einem hidraw-Node, für die Anzeige im Tray.
+/// Name of the device behind a hidraw node, for display in the tray.
 pub fn device_name(node: &str) -> Option<String> {
     let name = std::fs::read_to_string(format!("/sys/class/hidraw/{node}/device/uevent")).ok()?;
     name.lines()
@@ -88,8 +87,8 @@ pub fn device_name(node: &str) -> Option<String> {
         .map(|s| s.trim().to_string())
 }
 
-/// Gerätename, ohne den Node zu öffnen — für Statusabfragen, die keinen
-/// Lesezugriff brauchen.
+/// Device name without opening the node, for status queries that need no read
+/// access.
 pub fn present() -> Option<String> {
     let entries = std::fs::read_dir("/sys/class/hidraw").ok()?;
     for entry in entries.flatten() {
@@ -115,10 +114,10 @@ pub fn present() -> Option<String> {
     None
 }
 
-/// hidraw-Nodes mit Jabra-Vendor, die noch nicht überwacht werden.
+/// hidraw nodes with the Jabra vendor that are not being watched yet.
 ///
-/// `HID_ID` im uevent hat die Form `BUS:VENDOR:PRODUCT` in Hex. `warned`
-/// verhindert, dass sich dieselbe Fehlermeldung im Rescan-Takt wiederholt.
+/// `HID_ID` in the uevent has the form `BUS:VENDOR:PRODUCT` in hex. `warned`
+/// keeps the same message from repeating on every rescan.
 pub fn scan(
     watched: &HashSet<String>,
     warned: &mut HashSet<String>,
@@ -149,8 +148,8 @@ pub fn scan(
         if vendor != Some(JABRA_VENDOR) {
             continue;
         }
-        // Schreibend, weil der Vendor-Kanal Anfragen entgegennimmt; die
-        // udev-ACL vergibt ohnehin rw.
+        // Writable, because the vendor channel takes requests; the udev ACL
+        // grants rw anyway.
         match std::fs::OpenOptions::new().read(true).write(true).open(&dev_path) {
             Ok(f) => {
                 warned.remove(&dev_path);
@@ -170,8 +169,8 @@ pub fn scan(
     out
 }
 
-/// hidraw kennt kein async; blockierende Reads laufen deshalb je Gerät in einem
-/// eigenen Thread, der beim Abziehen des Dongles von selbst endet.
+/// hidraw knows no async, so blocking reads run in a thread per device that
+/// ends by itself when the dongle is pulled.
 pub fn spawn_reader(path: String, mut file: std::fs::File, tx: mpsc::UnboundedSender<Msg>) {
     std::thread::spawn(move || {
         let mut buf = [0u8; 64];

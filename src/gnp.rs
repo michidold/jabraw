@@ -1,29 +1,29 @@
-//! Jabras GNP-Protokoll auf dem Vendor-Kanal (Report 5, Usage-Page `0xff00`).
+//! Jabra's GNP protocol on the vendor report (report 5, usage page `0xff00`).
 //!
-//! Der Kernel reicht diesen Report unverändert durch; Akkustand und übrige
-//! Statuswerte sind nur darüber erreichbar, eine Battery-System-Usage-Page hat
-//! das Gerät nicht.
+//! The kernel passes this report through untouched. Battery level and the other
+//! status values are reachable only here; the device exposes no battery system
+//! usage page.
 //!
-//! Paketaufbau, ermittelt aus dem Verkehr von Jabras eigenem SDK:
+//! Packet layout, derived from the traffic Jabra's own SDK produces:
 //!
 //! ```text
-//! Byte 0   Zieladresse       0x01 = Gerät
-//! Byte 1   Quelladresse      0x00 = PC
-//! Byte 2   Sequenznummer     wird in der Antwort gespiegelt
-//! Byte 3   (Typ << 6) | Gesamtlänge in Byte
-//! Byte 4   Message-Typ       18 = Status
-//! Byte 5   Subcommand        2 = Akkustand des Headsets
-//! Byte 6+  Nutzdaten
+//! byte 0   destination      0x01 = device
+//! byte 1   source           0x00 = PC
+//! byte 2   sequence number  mirrored in the reply
+//! byte 3   (type << 6) | total length in bytes
+//! byte 4   message type     18 = status
+//! byte 5   subcommand       2 = headset battery
+//! byte 6+  payload
 //! ```
 
-/// Vendor-Report, über den die Kommandos laufen.
+/// Vendor report the commands travel on.
 pub const REPORT_ID: u8 = 0x05;
-/// Nutzlänge des Reports laut Descriptor (`75 08 95 3f`).
+/// Payload length of the report per the descriptor (`75 08 95 3f`).
 const REPORT_SIZE: usize = 63;
 pub const HEADER_LEN: usize = 6;
 
-/// Zieladressen. Dongle und Headset hängen am selben hidraw-Knoten und werden
-/// über dieses Byte auseinandergehalten.
+/// Destination addresses. Dongle and headset sit behind the same hidraw node
+/// and are told apart by this byte.
 pub const DST_DONGLE: u8 = 0x01;
 pub const DST_HEADSET: u8 = 0x04;
 const SRC_PC: u8 = 0x00;
@@ -34,17 +34,17 @@ pub const CMD_STATUS: u8 = 18;
 pub const SUB_HS_BATTERY: u8 = 2;
 
 pub const CMD_IDENT: u8 = 2;
-/// Geräteeinstellungen. Lesend unbedenklich; dieselben Subcommands sind
-/// beschreibbar und verändern dann dauerhaft die Konfiguration.
+/// Device settings. Harmless to read; the same subcommands are writable and
+/// then change the configuration for good.
 pub const CMD_CONFIG: u8 = 19;
 pub const SUB_NAME: u8 = 0;
 pub const SUB_SERIAL: u8 = 1;
 pub const SUB_VERSION: u8 = 3;
 
-/// Der nackte Paketkopf einer Leseanfrage, ohne Transporthülle.
+/// The bare packet header of a read request, without transport wrapping.
 ///
-/// Über hidraw kommt die Report-ID davor, über RFCOMM nichts — beides am Gerät
-/// geprüft.
+/// Over hidraw the report id goes in front, over RFCOMM nothing does. Both
+/// checked against the hardware.
 pub fn read_body(dst: u8, seq: u8, cmd: u8, sub: u8) -> [u8; HEADER_LEN] {
     [
         dst,
@@ -56,7 +56,7 @@ pub fn read_body(dst: u8, seq: u8, cmd: u8, sub: u8) -> [u8; HEADER_LEN] {
     ]
 }
 
-/// Lese-Anfrage für den hidraw-Knoten: führendes Byte ist die Report-ID.
+/// Read request for the hidraw node: the leading byte is the report id.
 pub fn read_request(dst: u8, seq: u8, cmd: u8, sub: u8) -> [u8; 1 + REPORT_SIZE] {
     let mut out = [0u8; 1 + REPORT_SIZE];
     out[0] = REPORT_ID;
@@ -65,7 +65,7 @@ pub fn read_request(dst: u8, seq: u8, cmd: u8, sub: u8) -> [u8; 1 + REPORT_SIZE]
 }
 
 pub struct Response<'a> {
-    /// Absender: verrät, ob Dongle oder Headset geantwortet hat.
+    /// Sender: says whether the dongle or the headset answered.
     pub src: u8,
     pub seq: u8,
     pub cmd: u8,
@@ -73,12 +73,12 @@ pub struct Response<'a> {
     pub data: &'a [u8],
 }
 
-/// Zerlegt einen eingehenden Report 5. `report` beginnt mit der Report-ID.
+/// Splits an incoming report 5. `report` starts with the report id.
 pub fn parse(report: &[u8]) -> Option<Response<'_>> {
     parse_body(report.strip_prefix(&[REPORT_ID])?)
 }
 
-/// Zerlegt ein Paket ohne Transporthülle, wie es über RFCOMM ankommt.
+/// Splits a packet without transport wrapping, as it arrives over RFCOMM.
 pub fn parse_body(body: &[u8]) -> Option<Response<'_>> {
     if body.len() < HEADER_LEN {
         return None;
@@ -96,15 +96,15 @@ pub fn parse_body(body: &[u8]) -> Option<Response<'_>> {
     })
 }
 
-/// Ladestand in Prozent aus der Antwort auf [`SUB_HS_BATTERY`].
+/// Charge level in percent from a [`SUB_HS_BATTERY`] reply.
 ///
-/// Byte 1 trägt den Prozentwert. Am Gerät belegt, mit Hin- und Rückweg:
-/// `00 20 00 00` bei 32 % ohne Kabel, `01 3a 00 00` bei 58 % am Kabel,
-/// `00 3d 00 00` bei 61 % nach dem Abziehen.
+/// Byte 1 carries the percentage. Established against the hardware in both
+/// directions: `00 20 00 00` at 32% off the cable, `01 3a 00 00` at 58% on it,
+/// `00 3d 00 00` at 61% after unplugging.
 ///
-/// Direkt am Headset ist die Antwort länger: `24 5d 10 64` bei 93 %. Byte 1
-/// bleibt der Prozentwert, Byte 2 und 3 steigen beim Laden (`10 64` auf
-/// `10 da`) und könnten die Zellspannung sein — unbelegt, deshalb ungenutzt.
+/// Queried straight at the headset the reply is longer: `24 5d 10 64` at 93%.
+/// Byte 1 stays the percentage; bytes 2 and 3 rise while charging (`10 64` to
+/// `10 da`) and could be cell voltage, which is unestablished and so unused.
 pub fn battery_percent(data: &[u8]) -> Option<u8> {
     match data.get(1) {
         Some(&p) if p <= 100 => Some(p),
@@ -112,15 +112,15 @@ pub fn battery_percent(data: &[u8]) -> Option<u8> {
     }
 }
 
-/// Byte 0 ist ein Bitfeld, Bit 0 der Ladezustand. Auf beiden Wegen geprüft:
-/// über den Dongle wechselt es `0x00`/`0x01`, direkt am Headset `0x24`/`0x25`.
-/// Die übrigen Bits sind unbelegt, deshalb nur Bit 0 auswerten — ein Vergleich
-/// auf ungleich null meldete am Headset dauerhaft "lädt".
+/// Byte 0 is a bit field and bit 0 the charging state. Checked on both
+/// transports: through the dongle it toggles `0x00`/`0x01`, straight at the
+/// headset `0x24`/`0x25`. The remaining bits are unestablished, so only bit 0
+/// is read — testing for non-zero claimed charging permanently on the headset.
 pub fn battery_charging(data: &[u8]) -> bool {
     data.first().is_some_and(|&b| b & 1 != 0)
 }
 
-/// Textantworten der ident-Gruppe: führendes Längenbyte, dann ASCII.
+/// Text replies of the ident group: a leading length byte, then ASCII.
 pub fn text(data: &[u8]) -> Option<String> {
     let (&len, rest) = data.split_first()?;
     let rest = rest.get(..len as usize)?;

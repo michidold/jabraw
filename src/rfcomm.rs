@@ -1,12 +1,12 @@
-//! GNP über Bluetooth, also ohne Dongle.
+//! GNP over Bluetooth, that is without a dongle.
 //!
-//! SDP-Abfragen liefern bei verbundenem Gerät keinen Kanal, deshalb übernimmt
-//! BlueZ die Suche: Wir registrieren ein Profil für die Serial-Port-UUID, rufen
-//! `ConnectProfile` und bekommen den Socket über `NewConnection` zurückgereicht.
+//! SDP queries return no channel while the device is connected, so BlueZ does
+//! the finding: a profile for the Serial Port UUID is registered,
+//! `ConnectProfile` is called, and the socket arrives through `NewConnection`.
 //!
-//! Die Rahmung ist derselbe Paketkopf wie über hidraw, nur ohne die Report-ID
-//! davor — am Gerät geprüft. Das Headset ist auch hier Adresse `0x04`; die
-//! Dongle-Adresse `0x01` beantwortet Anfragen erwartungsgemäß mit `nack`.
+//! The framing is the same packet header as over hidraw with no report id in
+//! front, checked against the hardware. The headset is address `0x04` here too;
+//! the dongle address `0x01` answers with `nack`, as it should.
 
 use std::collections::HashMap;
 use std::io::{Read, Write};
@@ -46,25 +46,25 @@ impl Profile {
     fn release(&self) {}
 }
 
-/// Offene RFCOMM-Sitzung zu einem Headset.
+/// An open RFCOMM session to a headset.
 pub struct Session {
     file: std::fs::File,
     seq: u8,
-    /// RFCOMM ist ein Stream: Antworten können zusammenfallen oder geteilt
-    /// ankommen, deshalb wird über das Längenfeld entrahmt statt je Lesevorgang
-    /// ein Paket anzunehmen wie bei hidraw.
+    /// RFCOMM is a stream: replies coalesce or split across reads, so packets
+    /// are cut on the length field rather than assuming one packet per read as
+    /// hidraw allows.
     buf: Vec<u8>,
 }
 
 impl Session {
-    /// Eine Leseanfrage und ihre Antwort. `None`, wenn das Gerät schweigt.
+    /// One read request and its reply. `None` if the device stays silent.
     pub fn read(&mut self, dst: u8, cmd: u8, sub: u8) -> Option<Vec<u8>> {
         let seq = self.next_seq();
         self.file.write_all(&gnp::read_body(dst, seq, cmd, sub)).ok()?;
         let deadline = Instant::now() + Duration::from_millis(900);
         while let Some(pkt) = self.next_packet(deadline) {
             let r = gnp::parse_body(&pkt)?;
-            // Das Gerät sendet auch unaufgefordert; nur die eigene Antwort zählt.
+            // The device also sends unprompted; only our own reply counts.
             if r.seq == seq && r.cmd == cmd && r.sub == sub {
                 return Some(r.data.to_vec());
             }
@@ -72,10 +72,10 @@ impl Session {
         None
     }
 
-    /// Alle Anfragen auf einmal absetzen und die Antworten einsammeln.
+    /// Sends every request first and collects the replies afterwards.
     ///
-    /// Nacheinander abzufragen wäre bei 56 Einstellungen und je einer knappen
-    /// Sekunde Wartezeit unbrauchbar langsam.
+    /// Asking one after another would be unusably slow at 56 settings and
+    /// close to a second of timeout each.
     pub fn sweep(
         &mut self,
         dst: u8,
@@ -123,7 +123,7 @@ impl Session {
         self.seq
     }
 
-    /// Ein vollständiges Paket aus dem Strom, entrahmt über das Längenfeld.
+    /// A complete packet from the stream, cut on the length field.
     fn next_packet(&mut self, deadline: Instant) -> Option<Vec<u8>> {
         loop {
             if self.buf.len() >= gnp::HEADER_LEN {
@@ -132,7 +132,7 @@ impl Session {
                     return Some(self.buf.drain(..len).collect());
                 }
                 if len < gnp::HEADER_LEN {
-                    // Unbrauchbares Längenfeld: Strom ist aus dem Tritt.
+                    // Unusable length field: the stream is out of step.
                     self.buf.clear();
                     return None;
                 }
@@ -159,12 +159,12 @@ fn readable(file: &std::fs::File, timeout: Duration) -> bool {
     unsafe { libc::poll(&mut p, 1, timeout.as_millis() as i32) > 0 }
 }
 
-/// Baut eine Sitzung zum angegebenen BlueZ-Gerätepfad auf.
+/// Opens a session to the given BlueZ device path.
 pub async fn connect(conn: &zbus::Connection, device: &str) -> Option<Session> {
     let ready = Arc::new(Notify::new());
     let slot: Slot = Arc::new(Mutex::new(None));
 
-    // Beim zweiten Aufruf liegt das Objekt schon; das ist kein Fehler.
+    // On a second call the object is already there, which is not an error.
     let _ = conn
         .object_server()
         .at(
@@ -186,7 +186,7 @@ pub async fn connect(conn: &zbus::Connection, device: &str) -> Option<Session> {
     opts.insert("Channel", Value::from(0u16));
     opts.insert("RequireAuthentication", Value::from(false));
     opts.insert("RequireAuthorization", Value::from(false));
-    // Ein bereits registriertes Profil meldet AlreadyExists — ebenfalls in Ordnung.
+    // An already registered profile answers AlreadyExists, equally fine.
     let _ = pm
         .call::<_, _, ()>("RegisterProfile", &(path, SPP_UUID, opts))
         .await;

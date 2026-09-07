@@ -1,28 +1,27 @@
-//! Das Tray-Symbol: schwarzes Headset auf gelbem Quadrat mit runden Ecken.
+//! The tray icon: a black headset on a yellow rounded square.
 //!
-//! Programmatisch gezeichnet statt als Bilddatei mitgeliefert. Das erspart
-//! einen PNG-Decoder als Abhängigkeit, und der Host kann jede Kantenlänge
-//! anfragen — Panels reichen von 16 bis 64 Pixel.
+//! Drawn in code rather than shipped as an image. That saves a PNG decoder as a
+//! dependency, and the host can ask for any edge length — panels range from 16
+//! to 64 pixels.
 
-/// Gelb des Hintergrunds und Schwarz des Headsets.
+/// Yellow of the plate and black of the headset.
 const YELLOW: (u8, u8, u8) = (0xFF, 0xC1, 0x07);
 const BLACK: (u8, u8, u8) = (0x14, 0x14, 0x14);
-/// Kantenglättung durch Überabtastung; 4×4 reicht bei diesen Größen.
+/// Antialiasing by supersampling; 4x4 is enough at these sizes.
 const SS: u32 = 4;
 
-/// Die Größen, die Panels üblicherweise anfragen. Der Host sucht sich die
-/// passende aus.
+/// The sizes panels usually ask for. The host picks whichever it wants.
 const SIZES: [u32; 3] = [22, 32, 48];
 
-/// Gerenderte Symbole, einmal je Prozesslauf. Der Tray fragt die Eigenschaft
-/// bei jeder Aktualisierung ab; neu zu rechnen wäre reine Verschwendung.
+/// Icons rendered once per process. The tray reads the property on every
+/// refresh, and recomputing would be pure waste.
 pub fn pixmaps() -> &'static [(u32, Vec<u8>)] {
     static CACHE: std::sync::OnceLock<Vec<(u32, Vec<u8>)>> = std::sync::OnceLock::new();
     CACHE.get_or_init(|| SIZES.iter().map(|&s| (s, render(s))).collect())
 }
 
-/// ARGB32 in Network Byte Order, wie die StatusNotifierItem-Spezifikation es
-/// verlangt.
+/// ARGB32 in network byte order, as the StatusNotifierItem specification
+/// requires.
 pub fn render(size: u32) -> Vec<u8> {
     let mut out = Vec::with_capacity((size * size * 4) as usize);
     let n = size as f32;
@@ -43,7 +42,7 @@ pub fn render(size: u32) -> Vec<u8> {
             }
             let samples = (SS * SS) as f32;
             let (bg, fg) = (bg / samples, fg / samples);
-            // Headset liegt auf der Platte; ausserhalb der Platte durchsichtig.
+            // Headset sits on the plate; outside the plate, transparent.
             let alpha = bg;
             let mix = |c1: u8, c2: u8| (c1 as f32 * (1.0 - fg) + c2 as f32 * fg) as u8;
             out.push((alpha * 255.0) as u8);
@@ -60,8 +59,8 @@ fn plate(x: f32, y: f32) -> bool {
 }
 
 fn headset(x: f32, y: f32) -> bool {
-    // Bügel als oberer Halbring, Ohrmuscheln als abgerundete Rechtecke,
-    // Mikrofonarm als Kapsel — sonst wäre es ein Kopfhörer, kein Headset.
+    // Headband as an upper half ring, earcups as rounded rectangles, boom as a
+    // capsule — without it this would read as headphones, not a headset.
     let band = ring(x, y, 0.5, 0.60, 0.245, 0.33) && y <= 0.60;
     let left = rounded_rect(x, y, 0.155, 0.545, 0.315, 0.80, 0.075);
     let right = rounded_rect(x, y, 0.685, 0.545, 0.845, 0.80, 0.075);
@@ -94,11 +93,11 @@ fn capsule(x: f32, y: f32, ax: f32, ay: f32, bx: f32, by: f32, r: f32) -> bool {
     (x - (ax + t * dx)).hypot(y - (ay + t * dy)) <= r
 }
 
-/// Das Symbol als PNG, für den Eintrag in der Anwendungsübersicht.
+/// The icon as PNG, for the application menu entry.
 ///
-/// Eigener Encoder statt einer Bibliothek: PNG braucht einen zlib-Strom, und
-/// der darf laut Format unkomprimierte Blöcke enthalten. Für ein paar Kilobyte
-/// Symbol lohnt keine Abhängigkeit.
+/// Own encoder rather than a library: PNG wants a zlib stream, and by the
+/// format a zlib stream may hold uncompressed blocks. For an icon of a few
+/// kilobytes that beats taking on a dependency.
 pub fn png(size: u32) -> Vec<u8> {
     let argb = render(size);
     let mut raw = Vec::with_capacity((size * (size * 4 + 1)) as usize);
@@ -132,7 +131,7 @@ fn chunk(out: &mut Vec<u8>, tag: &[u8; 4], data: &[u8]) {
     out.extend_from_slice(&crc32(&crc).to_be_bytes());
 }
 
-/// zlib-Strom aus gespeicherten, also unkomprimierten Deflate-Blöcken.
+/// zlib stream made of stored, that is uncompressed, deflate blocks.
 fn zlib_stored(data: &[u8]) -> Vec<u8> {
     let mut out = vec![0x78, 0x01];
     for (i, part) in data.chunks(0xFFFF).enumerate() {

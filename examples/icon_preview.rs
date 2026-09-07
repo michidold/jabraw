@@ -1,4 +1,4 @@
-//! Schreibt das Tray-Symbol als rohe ARGB-Daten zur Sichtprüfung.
+//! Writes the tray icon as raw ARGB data for visual inspection.
 #[path = "../src/icon.rs"]
 mod icon;
 

@@ -1,9 +1,9 @@
-//! Oberflächentexte in Deutsch und Englisch.
+//! Interface strings in English and German.
 //!
-//! Kein Übersetzungsrahmenwerk: rund dreißig Zeichenketten rechtfertigen weder
-//! gettext noch fluent. Log- und Fehlerausgaben bleiben bewusst englisch, sie
-//! richten sich an Entwickler und stehen so im selben Idiom wie README und
-//! Commit-Nachrichten.
+//! No translation framework: thirty-odd strings justify neither gettext nor
+//! fluent. Log and error output stays English on purpose — it addresses
+//! developers and belongs in the same idiom as the README and the commit
+//! messages.
 
 pub struct Strings {
     pub no_device: &'static str,
@@ -24,7 +24,7 @@ pub struct Strings {
     pub device_info: &'static str,
     pub settings: &'static str,
     pub quit: &'static str,
-    // Dialog
+    // Dialogs
     pub headset: &'static str,
     pub dongle: &'static str,
     pub model: &'static str,
@@ -37,7 +37,7 @@ pub struct Strings {
     pub no_settings: &'static str,
     pub on: &'static str,
     pub off: &'static str,
-    // Benachrichtigung
+    // Notification
     pub none_found: &'static str,
     pub speaker: &'static str,
     pub microphone: &'static str,
@@ -118,8 +118,8 @@ const DE: Strings = Strings {
     muted_suffix: "stumm",
 };
 
-/// Sprache aus der Umgebung. Englisch ist die Vorgabe, Deutsch nur bei
-/// ausdrücklich deutscher Locale.
+/// Language from the environment. English is the default, German only on an
+/// explicitly German locale.
 pub fn strings() -> &'static Strings {
     let locale = ["LC_ALL", "LC_MESSAGES", "LANG"]
         .iter()

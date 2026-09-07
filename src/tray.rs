@@ -1,8 +1,8 @@
-//! Tray-Menü als StatusNotifierItem.
+//! The tray menu as a StatusNotifierItem.
 //!
-//! SNI statt einer Desktop-spezifischen Erweiterung, damit dasselbe Binary
-//! unter GNOME (mit AppIndicator-Erweiterung), KDE und den Tray-fähigen
-//! wlroots-Panels läuft.
+//! SNI rather than a desktop-specific extension, so one binary serves GNOME
+//! (with the AppIndicator extension), KDE and the tray-capable wlroots
+//! panels.
 
 use tokio::sync::mpsc::UnboundedSender;
 
@@ -11,9 +11,8 @@ use crate::mpris::PlayerInfo;
 use crate::i18n::strings;
 use crate::DeviceInfo;
 
-/// Vom Menü ausgelöste Wünsche. Die Callbacks laufen im Tray-Task und dürfen
-/// nicht blockieren, deshalb wird die eigentliche Arbeit an die Hauptschleife
-/// abgegeben.
+/// Requests raised from the menu. The callbacks run in the tray task and must
+/// not block, so the actual work is handed to the main loop.
 pub enum Cmd {
     PlayPause,
     Previous,
@@ -33,17 +32,17 @@ pub struct HeadsetTray {
     pub audio: AudioState,
     pub player: Option<PlayerInfo>,
     pub battery: Option<u8>,
-    /// Nur über den Dongle bekannt; Bluetooth liefert keinen Ladezustand.
+    /// Known over GNP only; the HFP indicator carries no charging state.
     pub charging: bool,
     pub info: DeviceInfo,
-    /// Nur mit Dongle: über Bluetooth gibt es keinen GNP-Kanal.
+    /// Whether a GNP channel exists, over the dongle or over Bluetooth.
     pub has_gnp: bool,
     pub tx: UnboundedSender<Cmd>,
 }
 
 impl HeadsetTray {
     fn send(&self, cmd: Cmd) {
-        // Bricht nur ab, wenn die Hauptschleife schon beendet ist.
+        // Fails only once the main loop has ended.
         let _ = self.tx.send(cmd);
     }
 }
@@ -74,9 +73,9 @@ impl ksni::Tray for HeadsetTray {
         }
     }
 
-    // Kein `icon_name`: GNOMEs AppIndicator bevorzugt einen gesetzten Namen
-    // gegenüber der Pixmap und zeigte dann das Symbol aus dem Icon-Theme statt
-    // des eigenen. Ohne Namen bleibt nur die Pixmap.
+    // No `icon_name`: GNOME's AppIndicator prefers a set name over the pixmap
+    // and then showed the icon theme's own rather than this one. Without a
+    // name only the pixmap is left.
     fn icon_pixmap(&self) -> Vec<ksni::Icon> {
         crate::icon::pixmaps()
             .iter()
@@ -251,7 +250,7 @@ impl ksni::Tray for HeadsetTray {
         items.push(
             StandardItem {
                 label: s.settings.into(),
-                // GNP gibt es über den Dongle wie über Bluetooth.
+                // GNP runs over the dongle and over Bluetooth alike.
                 enabled: self.has_gnp,
                 activate: Box::new(|this: &mut Self| this.send(Cmd::ShowSettings)),
                 ..Default::default()

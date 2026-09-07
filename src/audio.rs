@@ -1,8 +1,8 @@
-//! Lautstärke, Stummschaltung und Ausgabegerät.
+//! Volume, mute and output device.
 //!
-//! Gesteuert wird über die CLI der laufenden Audio-Pipeline: `wpctl` unter
-//! PipeWire/WirePlumber, ersatzweise `pactl` unter PulseAudio. Das vermeidet
-//! eine Bindung an libpulse und funktioniert auf beiden Stacks.
+//! Driven through the CLI of whichever audio pipeline is running: `wpctl` under
+//! PipeWire/WirePlumber, `pactl` under PulseAudio. That avoids binding to
+//! libpulse and works on both stacks.
 
 use serde_json::Value;
 use std::process::Stdio;
@@ -80,7 +80,7 @@ async fn run(bin: &str, args: &[&str]) -> bool {
     )
 }
 
-/// `wpctl get-volume` liefert "Volume: 0.65" bzw. "Volume: 0.65 [MUTED]".
+/// `wpctl get-volume` answers "Volume: 0.65" or "Volume: 0.65 [MUTED]".
 fn parse_wpctl_volume(s: &str) -> (f32, bool) {
     let muted = s.contains("[MUTED]");
     let vol = s
@@ -95,7 +95,7 @@ async fn read_target(target: Target) -> (f32, bool) {
     if let Some(s) = output("wpctl", &["get-volume", target.wpctl()]).await {
         return parse_wpctl_volume(&s);
     }
-    // PulseAudio: Lautstärke und Mute kommen aus getrennten Abfragen.
+    // PulseAudio: volume and mute come from separate queries.
     let muted = output("pactl", &[
         match target {
             Target::Sink => "get-sink-mute",
@@ -125,8 +125,8 @@ async fn read_target(target: Target) -> (f32, bool) {
     (vol, muted)
 }
 
-/// Ausgabegeräte aus `pw-dump`. Der Standard-Sink steht im Metadata-Objekt
-/// unter `default.audio.sink` und wird über den Knotennamen zugeordnet.
+/// Output devices from `pw-dump`. The default sink is named in the metadata
+/// object under `default.audio.sink` and matched by node name.
 pub async fn list_sinks() -> Vec<Sink> {
     let Some(json) = output("pw-dump", &[]).await else {
         return vec![];
@@ -170,13 +170,13 @@ pub async fn list_sinks() -> Vec<Sink> {
     sinks
 }
 
-/// Lautstärke und Stummschaltung. Billig genug für den Anzeigetakt: zwei
-/// `wpctl`-Aufrufe zu je rund 3 ms.
+/// Volume and mute. Cheap enough for the display tick: two `wpctl` calls at
+/// roughly 3 ms each.
 ///
-/// Die Geräteliste steckt bewusst nicht darin — sie kommt aus `pw-dump`, das
-/// den gesamten PipeWire-Graphen serialisiert (rund 500 KB, 45 ms) und im
-/// Zweisekundentakt spürbar Last erzeugt hat, obwohl sich Ausgabegeräte kaum
-/// ändern und das Menü meist geschlossen ist.
+/// The device list is deliberately not part of this. It comes from `pw-dump`,
+/// which serialises the entire PipeWire graph (some 500 KB, 45 ms) and put
+/// measurable load on a two-second tick, while output devices barely change and
+/// the menu is usually closed.
 pub async fn read_levels() -> AudioState {
     let (sink_volume, sink_muted) = read_target(Target::Sink).await;
     let (source_volume, source_muted) = read_target(Target::Source).await;
@@ -199,7 +199,7 @@ pub async fn toggle_mute(target: Target) {
     eprintln!("Stummschaltung fehlgeschlagen: weder wpctl noch pactl verfügbar");
 }
 
-/// `delta` in Prozentpunkten, positiv oder negativ.
+/// `delta` in percentage points, positive or negative.
 pub async fn change_volume(target: Target, delta: i32) {
     let step = format!("{}%{}", delta.abs(), if delta < 0 { "-" } else { "+" });
     if run("wpctl", &["set-volume", "-l", "1.5", target.wpctl(), &step]).await {

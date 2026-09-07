@@ -1,22 +1,22 @@
-//! Erkennung eines direkt gekoppelten Jabra-Headsets über BlueZ.
+//! Detecting a directly paired Jabra headset through BlueZ.
 //!
-//! Ohne Dongle gibt es kein hidraw-Gerät und damit keinen GNP-Kanal. Alles,
-//! was der Daemon dann noch anzeigen kann, liefert BlueZ auf dem System-Bus:
-//! Name und Akkustand. Die Medientasten laufen in diesem Betrieb über AVRCP
-//! und werden bereits von der Desktop-Umgebung an MPRIS weitergereicht.
+//! Without a dongle there is no hidraw device. BlueZ supplies name and charge
+//! level on the system bus; everything beyond that comes from GNP over RFCOMM,
+//! see [`crate::rfcomm`]. The media keys travel over AVRCP in this mode and the
+//! desktop forwards them to MPRIS already.
 
 use std::collections::HashMap;
 
 use zbus::zvariant::{OwnedObjectPath, OwnedValue};
 
-/// Bluetooth-SIG-Kennung von GN Netcom. Verlässlicher als ein Namensvergleich,
-/// weil Nutzer ihre Geräte umbenennen können.
+/// Bluetooth SIG identifier of GN Netcom. Sturdier than comparing names, which
+/// users can change.
 const JABRA_VENDOR_PREFIX: &str = "bluetooth:v0067";
 
 pub struct BtDevice {
     pub name: String,
     pub battery: Option<u8>,
-    /// BlueZ-Objektpfad, für den RFCOMM-Verbindungsaufbau.
+    /// BlueZ object path, for opening the RFCOMM connection.
     pub path: String,
 }
 
@@ -29,7 +29,7 @@ fn field<T: TryFrom<OwnedValue>>(
     T::try_from(props.get(key)?.try_clone().ok()?).ok()
 }
 
-/// Das erste verbundene Jabra-Gerät, sofern eines gekoppelt ist.
+/// The first connected Jabra device, if one is paired.
 pub async fn connected_jabra(conn: &zbus::Connection) -> Option<BtDevice> {
     let proxy = zbus::proxy::Builder::<zbus::Proxy>::new(conn)
         .destination("org.bluez")
