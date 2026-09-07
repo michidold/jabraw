@@ -82,9 +82,11 @@ pub fn parse(report: &[u8]) -> Option<Response<'_>> {
 
 /// Ladestand in Prozent aus der Antwort auf [`SUB_HS_BATTERY`].
 ///
-/// Beobachtet wurde `00 20 00 00` bei 32 %. Byte 1 trägt den Prozentwert; die
-/// Bedeutung von Byte 0 ist unbekannt, Byte 2 und 3 waren stets 0 und dürften
-/// nach dem Vorbild der SDK-Struktur "lädt" und "fast leer" sein.
+/// Die vier Datenbytes wurden am Gerät abgeglichen: `00 20 00 00` bei 32 % ohne
+/// Ladekabel, `01 3a 00 00` bei 58 % am Kabel. Byte 1 trägt den Prozentwert,
+/// Byte 0 zeigt den Ladevorgang an. Byte 2 und 3 waren in allen Messungen 0 und
+/// dürften nach dem Vorbild der SDK-Struktur "fast leer" und die Batteriezelle
+/// bezeichnen.
 pub fn battery_percent(data: &[u8]) -> Option<u8> {
     match data.get(1) {
         Some(&p) if p <= 100 => Some(p),
@@ -93,7 +95,7 @@ pub fn battery_percent(data: &[u8]) -> Option<u8> {
 }
 
 pub fn battery_charging(data: &[u8]) -> bool {
-    data.get(2).is_some_and(|&b| b != 0)
+    data.first().is_some_and(|&b| b != 0)
 }
 
 /// Textantworten der ident-Gruppe: führendes Längenbyte, dann ASCII.

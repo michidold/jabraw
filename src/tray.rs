@@ -31,6 +31,8 @@ pub struct HeadsetTray {
     pub audio: AudioState,
     pub player: Option<PlayerInfo>,
     pub battery: Option<u8>,
+    /// Nur über den Dongle bekannt; Bluetooth liefert keinen Ladezustand.
+    pub charging: bool,
     pub info: DeviceInfo,
     pub tx: UnboundedSender<Cmd>,
 }
@@ -46,6 +48,14 @@ fn percent(v: f32) -> String {
     format!("{}%", (v * 100.0).round() as i32)
 }
 
+fn battery_text(level: u8, charging: bool) -> String {
+    if charging {
+        format!("{level} % (lädt)")
+    } else {
+        format!("{level} %")
+    }
+}
+
 impl ksni::Tray for HeadsetTray {
     fn id(&self) -> String {
         env!("CARGO_PKG_NAME").into()
@@ -53,7 +63,7 @@ impl ksni::Tray for HeadsetTray {
 
     fn title(&self) -> String {
         match (&self.device, self.battery) {
-            (Some(d), Some(p)) => format!("{d} — {p} %"),
+            (Some(d), Some(p)) => format!("{d} — {}", battery_text(p, self.charging)),
             (Some(d), None) => d.clone(),
             (None, _) => "Kein Jabra-Gerät".into(),
         }
@@ -87,7 +97,9 @@ impl ksni::Tray for HeadsetTray {
         items.push(
             StandardItem {
                 label: match (&self.device, self.battery) {
-                    (Some(d), Some(p)) => format!("{d} — Akku {p} %"),
+                    (Some(d), Some(p)) => {
+                        format!("{d} — Akku {}", battery_text(p, self.charging))
+                    }
                     (Some(d), None) => format!("{d} — verbunden"),
                     (None, _) => "Nicht verbunden".into(),
                 },

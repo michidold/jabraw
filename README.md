@@ -64,8 +64,11 @@ byte 5   subcommand       2 = headset battery
 byte 6+  payload
 ```
 
-A read of status/2 answers with four payload bytes whose second byte is the
-percentage.
+A read of status/2 answers with four payload bytes: byte 1 is the percentage,
+byte 0 signals that the headset is charging. Both were matched against the
+hardware, `00 20 00 00` at 32 % off the cable against `01 3a 00 00` at 58 % on
+it. Bluetooth carries the charge level over HFP, which has no charging flag
+and only coarse steps, so "charging" shows only on the USB path.
 
 Byte 0 addresses the target, which is how headset and dongle are told apart
 on the one hidraw node: `0x01` is the dongle, `0x04` the headset. Both answer

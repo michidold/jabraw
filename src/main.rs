@@ -108,7 +108,7 @@ async fn notify(body: &str) {
 
 /// Kleiner Infodialog. Der Daemon bringt keine GUI mit, deshalb über das
 /// Dialogwerkzeug des Desktops; ohne eines davon bleibt die Benachrichtigung.
-async fn show_device_info(info: &DeviceInfo, battery: Option<u8>) {
+async fn show_device_info(info: &DeviceInfo, battery: Option<u8>, charging: bool) {
     let line = |label: &str, v: &Option<String>| match v {
         Some(v) => format!("{label}: {v}\n"),
         None => String::new(),
@@ -119,7 +119,10 @@ async fn show_device_info(info: &DeviceInfo, battery: Option<u8>) {
     text.push_str(&line("  Firmware", &info.headset_version));
     text.push_str(&line("  Seriennummer", &info.headset_serial));
     if let Some(p) = battery {
-        text.push_str(&format!("  Akku: {p} %\n"));
+        text.push_str(&format!(
+            "  Akku: {p} %{}\n",
+            if charging { " (lädt)" } else { "" }
+        ));
     }
     // Ohne Dongle bleibt der Abschnitt leer; über Bluetooth kennt BlueZ nur
     // Name und Akkustand.
@@ -207,6 +210,7 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
     // Schreibende Kopien der Geraete-Handles fuer GNP-Anfragen.
     let mut writers: HashMap<String, std::fs::File> = HashMap::new();
     let mut battery: Option<u8> = None;
+    let mut charging = false;
     let mut info = DeviceInfo::default();
     let mut sinks: Vec<audio::Sink> = Vec::new();
     let mut bt: Option<bluetooth::BtDevice> = None;
@@ -230,6 +234,7 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
             audio: audio::AudioState::default(),
             player: None,
             battery: None,
+            charging: false,
             info: DeviceInfo::default(),
             tx: cmd_tx.clone(),
         })
@@ -305,6 +310,8 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
                         };
                     }
                     battery = bt.as_ref().and_then(|d| d.battery);
+                    // BlueZ meldet über HFP nur den Füllstand, keinen Ladezustand.
+                    charging = false;
                     info = match &bt {
                         Some(d) => DeviceInfo {
                             headset_name: Some(d.name.clone()),
@@ -315,10 +322,13 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
                 }
                 ticks = ticks.wrapping_add(1);
                 if let Some(handle) = &tray {
-                    let device = names
-                        .values()
-                        .next()
-                        .cloned()
+                    // Der Akkustand gehört dem Headset, nicht dem Dongle —
+                    // also auch den Namen des Headsets zeigen, sobald er über
+                    // ident bekannt ist. Sonst der Name des USB-Geräts.
+                    let device = info
+                        .headset_name
+                        .clone()
+                        .or_else(|| names.values().next().cloned())
                         .or_else(|| bt.as_ref().map(|d| d.name.clone()));
                     let info_snapshot = info.clone();
                     if ticks.is_multiple_of(SINKS_EVERY_N_TICKS) || sinks.is_empty() {
@@ -332,6 +342,7 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
                         t.audio = audio_state;
                         t.player = player;
                         t.battery = battery;
+                        t.charging = charging;
                         t.info = info_snapshot;
                     }).await;
                 }
@@ -345,7 +356,7 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
                 Cmd::ToggleSourceMute => audio::toggle_mute(Target::Source).await,
                 Cmd::Volume(delta) => audio::change_volume(Target::Sink, delta).await,
                 Cmd::SetSink(id) => audio::set_default_sink(id).await,
-                Cmd::ShowInfo => show_device_info(&info, battery).await,
+                Cmd::ShowInfo => show_device_info(&info, battery, charging).await,
                 // Beim Öffnen des Menüs die Geräteliste auffrischen, damit das
                 // seltene Abfrageintervall nicht zu veralteten Einträgen führt.
                 Cmd::Refresh => sinks = audio::list_sinks().await,
@@ -362,6 +373,7 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
                     println!("{path} nicht mehr verfügbar");
                     writers.remove(&path);
                     battery = None;
+                    charging = false;
                     info = DeviceInfo::default();
                     watched.remove(&path);
                     names.remove(&path);
@@ -380,10 +392,10 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
                                         && r.sub == gnp::SUB_HS_BATTERY =>
                                 {
                                     battery = gnp::battery_percent(r.data);
+                                    charging = gnp::battery_charging(r.data);
                                     if debug {
                                         println!(
-                                            "  Akku: {battery:?} % lädt={}",
-                                            gnp::battery_charging(r.data)
+                                            "  Akku: {battery:?} % lädt={charging}"
                                         );
                                     }
                                 }
