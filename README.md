@@ -1,11 +1,12 @@
 # Jabraw
 
 The multi-function button on Jabra headsets does nothing on Linux. Jabraw
-makes it play and pause, and adds a tray menu for volume, mute and output
-device.
+makes it play and pause, and adds a tray menu for battery, volume, mute
+and output device.
 
-Developed against a Jabra Evolve2 65 on a Link 380 dongle. Devices are
-matched by USB vendor `0b0e`, so other Jabra hardware may work.
+Developed against a Jabra Evolve2 65, over the Link 380 dongle and over
+Bluetooth. Devices are matched by vendor id, USB `0b0e` and Bluetooth
+`0067`, not by model.
 
 ## Install
 
@@ -16,87 +17,38 @@ systemctl --user restart wireplumber
 ```
 
 Replug the dongle so udev applies the ACL, then log out and back in.
-Jabraw starts on its own from then on.
+Autostart runs the installed binary from then on, so reinstall after
+rebuilding — `jabraw --version` and the device information dialog both
+say which build is running.
 
 ## Use
 
 Press the multi-function button to play or pause the active MPRIS player.
 The volume rocker keeps working as before, through the desktop.
 
-The tray icon has the rest: headset battery level, current player and
-track, next and previous, volume and mute for both speaker and
-microphone, and output device selection. "Device information" opens a
-dialog with model, firmware and serial number of both the headset and the
-dongle, and "Device settings" lists what the device reports about its own
-configuration.
+The tray icon has the rest: battery level and charging state, current
+player and track, next and previous, volume and mute for speaker and
+microphone, and output device selection. Two dialogs show what the
+device reports about itself — model, firmware and serial number for both
+headset and dongle, and an overview of its settings.
 
-The interface follows the locale, English by default and German on a German
-LC_ALL, LC_MESSAGES or LANG.
+Paired straight over Bluetooth it all still works. The buttons travel
+over AVRCP and the desktop forwards them to MPRIS, BlueZ reports the
+battery, and jabraw picks the headset up from there. Charging state,
+firmware and settings need the dongle; see issue #1.
 
-Skipping tracks from the headset itself is not possible — it never sends
-those HID usages.
+The interface follows the locale, English by default and German on a
+German `LC_ALL`, `LC_MESSAGES` or `LANG`.
 
 ## Debug
 
 ```bash
-jabraw --version    # which build is actually running
-jabraw --debug      # print every raw report and the bits that changed
+jabraw --version    # which build is running
+jabraw --debug      # every raw report and the bits that changed
 jabraw --no-tray    # keys only, no tray icon
 ```
 
-The device information dialog shows the same version, because autostart runs
-the installed binary and an older package there is otherwise invisible.
-
-## Without the dongle
-
-Paired straight over Bluetooth, the headset has no HID device, so none of
-the above applies. Nothing needs doing: the buttons travel over AVRCP and the
-desktop forwards them to MPRIS, and BlueZ reports the battery over HFP.
-Jabraw picks the headset up through BlueZ so it still shows in the tray with
-its name and battery, and falls back to the USB path the moment a dongle
-appears. Devices are matched by vendor id, USB `0b0e` and Bluetooth `0067`,
-not by model.
-
-## Device settings
-
-Jabra's protocol carries 212 configuration subcommands, of which any given
-model answers a fraction. Jabraw asks a fixed list of the ones that mean
-something to a user and shows whatever comes back, so a headset without ANC
-simply has no ANC row. Dongle and headset are asked separately and answer
-different sets: the dongle knows about pairing and ringtones, the headset
-about the busylight, on-head detection and the boom arm.
-
-Reading only. The same subcommands can be written, which would change device
-configuration for good.
-
-## Battery level
-
-The device exposes no HID battery usage page, so `upower` does not see it.
-The level comes from Jabra's own GNP protocol on the vendor report instead:
-
-```text
-byte 0   destination      0x01 = device
-byte 1   source           0x00 = PC
-byte 2   sequence number  mirrored in the reply
-byte 3   (type << 6) | total length in bytes
-byte 4   message type     18 = status
-byte 5   subcommand       2 = headset battery
-byte 6+  payload
-```
-
-A read of status/2 answers with four payload bytes: byte 1 is the percentage,
-byte 0 signals that the headset is charging. Both were matched against the
-hardware, `00 20 00 00` at 32 % off the cable against `01 3a 00 00` at 58 % on
-it. Bluetooth carries the charge level over HFP, which has no charging flag
-and only coarse steps, so "charging" shows only on the USB path.
-
-Byte 0 addresses the target, which is how headset and dongle are told apart
-on the one hidraw node: `0x01` is the dongle, `0x04` the headset. Both answer
-the ident group, so each reports its own name, firmware version and serial. The packet layout was taken from the traffic Jabra's own SDK
-produces, so jabraw sends nothing the vendor tool does not send itself. No
-proprietary library is involved at runtime.
-
-## Why this is needed
+## Background
 
 The button does emit a HID event, consumer usage `0xb1` (Pause) or `0xb0`
 (Play). But the Link 380 declares those two bits as Constant (`81 07`) in
@@ -104,6 +56,24 @@ its report descriptor, and `hid-input.c` skips constant fields, so the
 kernel allocates no key code and evdev never sees the press. Jabraw reads
 the raw hidraw reports instead. The volume rocker sits on `81 02` (Data),
 which is why volume was the only thing that ever worked.
+
+Battery, device data and settings come from Jabra's GNP protocol on the
+vendor report:
+
+```text
+byte 0   destination      0x01 dongle, 0x04 headset
+byte 1   source           0x00 = PC
+byte 2   sequence number  mirrored in the reply
+byte 3   (type << 6) | total length in bytes
+byte 4   message type     2 ident, 18 status, 19 config
+byte 5   subcommand
+byte 6+  payload
+```
+
+The layout was derived from the traffic Jabra's own SDK produces, so
+jabraw sends nothing the vendor tool does not send itself, and no
+proprietary library is involved at runtime. Reading only — the same
+subcommands are writable and would change device configuration for good.
 
 ## License
 
