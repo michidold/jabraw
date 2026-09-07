@@ -22,6 +22,7 @@ pub enum Cmd {
     ToggleSourceMute,
     Volume(i32),
     ShowInfo,
+    ShowSettings,
     Refresh,
     SetSink(u32),
     Quit,
@@ -35,6 +36,8 @@ pub struct HeadsetTray {
     /// Nur über den Dongle bekannt; Bluetooth liefert keinen Ladezustand.
     pub charging: bool,
     pub info: DeviceInfo,
+    /// Nur mit Dongle: über Bluetooth gibt es keinen GNP-Kanal.
+    pub has_gnp: bool,
     pub tx: UnboundedSender<Cmd>,
 }
 
@@ -237,6 +240,16 @@ impl ksni::Tray for HeadsetTray {
                 label: s.device_info.into(),
                 enabled: self.device.is_some(),
                 activate: Box::new(|this: &mut Self| this.send(Cmd::ShowInfo)),
+                ..Default::default()
+            }
+            .into(),
+        );
+        items.push(
+            StandardItem {
+                label: s.settings.into(),
+                // Die Einstellungen kommen über GNP, das es nur am Dongle gibt.
+                enabled: self.has_gnp,
+                activate: Box::new(|this: &mut Self| this.send(Cmd::ShowSettings)),
                 ..Default::default()
             }
             .into(),

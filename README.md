@@ -25,9 +25,13 @@ The volume rocker keeps working as before, through the desktop.
 
 The tray icon has the rest: headset battery level, current player and
 track, next and previous, volume and mute for both speaker and
-microphone, and output device selection. "Geräteinformationen" opens a
-dialog with model, firmware and serial number of both the headset and
-the dongle.
+microphone, and output device selection. "Device information" opens a
+dialog with model, firmware and serial number of both the headset and the
+dongle, and "Device settings" lists what the device reports about its own
+configuration.
+
+The interface follows the locale, English by default and German on a German
+LC_ALL, LC_MESSAGES or LANG.
 
 Skipping tracks from the headset itself is not possible — it never sends
 those HID usages.
@@ -48,6 +52,18 @@ Jabraw picks the headset up through BlueZ so it still shows in the tray with
 its name and battery, and falls back to the USB path the moment a dongle
 appears. Devices are matched by vendor id, USB `0b0e` and Bluetooth `0067`,
 not by model.
+
+## Device settings
+
+Jabra's protocol carries 212 configuration subcommands, of which any given
+model answers a fraction. Jabraw asks a fixed list of the ones that mean
+something to a user and shows whatever comes back, so a headset without ANC
+simply has no ANC row. Dongle and headset are asked separately and answer
+different sets: the dongle knows about pairing and ringtones, the headset
+about the busylight, on-head detection and the boom arm.
+
+Reading only. The same subcommands can be written, which would change device
+configuration for good.
 
 ## Battery level
 

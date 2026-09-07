@@ -1,5 +1,6 @@
 mod audio;
 mod bluetooth;
+mod config;
 mod gnp;
 mod hid;
 mod i18n;
@@ -169,6 +170,68 @@ async fn show_device_info(info: &DeviceInfo, battery: Option<u8>, charging: bool
     notify(&text.replace('\n', " · ")).await;
 }
 
+/// Übersicht der Geräteeinstellungen als Tabelle.
+async fn show_settings(path: Option<String>) {
+    let s = strings();
+    let Some(path) = path else { return };
+    let settings = match tokio::task::spawn_blocking(move || config::read_all(&path)).await {
+        Ok(Ok(v)) => v,
+        Ok(Err(e)) => return eprintln!("reading settings failed: {e}"),
+        Err(e) => return eprintln!("settings task failed: {e}"),
+    };
+    if settings.is_empty() {
+        notify(s.no_settings).await;
+        return;
+    }
+
+    let mut args = vec![
+        "--list".to_string(),
+        "--title=Jabraw".to_string(),
+        format!("--text={}", s.settings.trim_end_matches(" …")),
+        "--width=520".to_string(),
+        "--height=560".to_string(),
+        "--column".to_string(),
+        String::new(),
+        "--column".to_string(),
+        s.setting.to_string(),
+        "--column".to_string(),
+        s.value.to_string(),
+    ];
+    for item in &settings {
+        args.push(item.device.to_string());
+        args.push(item.name.to_string());
+        args.push(format_value(&item.value));
+    }
+    match tokio::process::Command::new("zenity").args(&args).status().await {
+        Ok(_) => {}
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            let text: Vec<String> = settings
+                .iter()
+                .map(|i| format!("{} {}: {}", i.device, i.name, format_value(&i.value)))
+                .collect();
+            notify(&text.join("\n")).await;
+        }
+        Err(e) => eprintln!("zenity failed: {e}"),
+    }
+}
+
+/// Einzelbytes 0 und 1 sind durchweg Schalter; alles andere bleibt roh, weil
+/// die Bedeutung je Einstellung anders und undokumentiert ist.
+fn format_value(data: &[u8]) -> String {
+    let s = strings();
+    match data {
+        [] => "—".to_string(),
+        [0] => s.off.to_string(),
+        [1] => s.on.to_string(),
+        [v] => v.to_string(),
+        _ => data
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect::<Vec<_>>()
+            .join(" "),
+    }
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
@@ -245,6 +308,7 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
             battery: None,
             charging: false,
             info: DeviceInfo::default(),
+            has_gnp: false,
             tx: cmd_tx.clone(),
         })
         .spawn()
@@ -340,6 +404,7 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
                         .or_else(|| names.values().next().cloned())
                         .or_else(|| bt.as_ref().map(|d| d.name.clone()));
                     let info_snapshot = info.clone();
+                    let has_gnp = !writers.is_empty();
                     if ticks.is_multiple_of(SINKS_EVERY_N_TICKS) || sinks.is_empty() {
                         sinks = audio::list_sinks().await;
                     }
@@ -353,6 +418,7 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
                         t.battery = battery;
                         t.charging = charging;
                         t.info = info_snapshot;
+                        t.has_gnp = has_gnp;
                     }).await;
                 }
             }
@@ -366,6 +432,10 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
                 Cmd::Volume(delta) => audio::change_volume(Target::Sink, delta).await,
                 Cmd::SetSink(id) => audio::set_default_sink(id).await,
                 Cmd::ShowInfo => show_device_info(&info, battery, charging).await,
+                Cmd::ShowSettings => {
+                    let path = watched.iter().next().cloned();
+                    show_settings(path).await;
+                }
                 // Beim Öffnen des Menüs die Geräteliste auffrischen, damit das
                 // seltene Abfrageintervall nicht zu veralteten Einträgen führt.
                 Cmd::Refresh => sinks = audio::list_sinks().await,

@@ -34,6 +34,9 @@ pub const CMD_STATUS: u8 = 18;
 pub const SUB_HS_BATTERY: u8 = 2;
 
 pub const CMD_IDENT: u8 = 2;
+/// Geräteeinstellungen. Lesend unbedenklich; dieselben Subcommands sind
+/// beschreibbar und verändern dann dauerhaft die Konfiguration.
+pub const CMD_CONFIG: u8 = 19;
 pub const SUB_NAME: u8 = 0;
 pub const SUB_SERIAL: u8 = 1;
 pub const SUB_VERSION: u8 = 3;
