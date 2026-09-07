@@ -74,14 +74,22 @@ impl ksni::Tray for HeadsetTray {
         }
     }
 
+    /// Eigenes Symbol statt eines Themennamens, damit es überall gleich
+    /// aussieht. `icon_name` bleibt als Rückfall für Hosts, die keine Pixmap
+    /// auswerten.
     fn icon_name(&self) -> String {
-        if self.device.is_none() {
-            "audio-headset-symbolic".into()
-        } else if self.audio.source_muted {
-            "microphone-disabled-symbolic".into()
-        } else {
-            "audio-headset-symbolic".into()
-        }
+        "audio-headset".into()
+    }
+
+    fn icon_pixmap(&self) -> Vec<ksni::Icon> {
+        crate::icon::pixmaps()
+            .iter()
+            .map(|(size, data)| ksni::Icon {
+                width: *size as i32,
+                height: *size as i32,
+                data: data.clone(),
+            })
+            .collect()
     }
 
     fn status(&self) -> ksni::Status {

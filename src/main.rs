@@ -4,6 +4,7 @@ mod config;
 mod gnp;
 mod hid;
 mod i18n;
+mod icon;
 mod mpris;
 mod rfcomm;
 mod tray;
