@@ -20,7 +20,7 @@
 pub const REPORT_ID: u8 = 0x05;
 /// Nutzlänge des Reports laut Descriptor (`75 08 95 3f`).
 const REPORT_SIZE: usize = 63;
-const HEADER_LEN: usize = 6;
+pub const HEADER_LEN: usize = 6;
 
 /// Zieladressen. Dongle und Headset hängen am selben hidraw-Knoten und werden
 /// über dieses Byte auseinandergehalten.

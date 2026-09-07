@@ -247,7 +247,7 @@ impl ksni::Tray for HeadsetTray {
         items.push(
             StandardItem {
                 label: s.settings.into(),
-                // Die Einstellungen kommen über GNP, das es nur am Dongle gibt.
+                // GNP gibt es über den Dongle wie über Bluetooth.
                 enabled: self.has_gnp,
                 activate: Box::new(|this: &mut Self| this.send(Cmd::ShowSettings)),
                 ..Default::default()

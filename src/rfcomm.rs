@@ -12,7 +12,7 @@ use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::os::fd::AsRawFd;
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use tokio::sync::Notify;
 use zbus::zvariant::{OwnedObjectPath, OwnedValue, Value};
@@ -50,28 +50,103 @@ impl Profile {
 pub struct Session {
     file: std::fs::File,
     seq: u8,
+    /// RFCOMM ist ein Stream: Antworten können zusammenfallen oder geteilt
+    /// ankommen, deshalb wird über das Längenfeld entrahmt statt je Lesevorgang
+    /// ein Paket anzunehmen wie bei hidraw.
+    buf: Vec<u8>,
 }
 
 impl Session {
     /// Eine Leseanfrage und ihre Antwort. `None`, wenn das Gerät schweigt.
     pub fn read(&mut self, dst: u8, cmd: u8, sub: u8) -> Option<Vec<u8>> {
-        self.seq = self.seq.wrapping_add(1).max(1);
-        let seq = self.seq;
+        let seq = self.next_seq();
         self.file.write_all(&gnp::read_body(dst, seq, cmd, sub)).ok()?;
-
-        let mut buf = [0u8; 128];
-        for _ in 0..4 {
-            if !readable(&self.file, Duration::from_millis(700)) {
-                return None;
-            }
-            let n = self.file.read(&mut buf).ok()?;
-            let r = gnp::parse_body(&buf[..n])?;
+        let deadline = Instant::now() + Duration::from_millis(900);
+        while let Some(pkt) = self.next_packet(deadline) {
+            let r = gnp::parse_body(&pkt)?;
             // Das Gerät sendet auch unaufgefordert; nur die eigene Antwort zählt.
             if r.seq == seq && r.cmd == cmd && r.sub == sub {
                 return Some(r.data.to_vec());
             }
         }
         None
+    }
+
+    /// Alle Anfragen auf einmal absetzen und die Antworten einsammeln.
+    ///
+    /// Nacheinander abzufragen wäre bei 56 Einstellungen und je einer knappen
+    /// Sekunde Wartezeit unbrauchbar langsam.
+    pub fn sweep(
+        &mut self,
+        dst: u8,
+        cmd: u8,
+        subs: &[(u8, &'static str)],
+    ) -> Vec<(&'static str, Vec<u8>)> {
+        let mut pending = std::collections::HashMap::new();
+        for (sub, name) in subs {
+            let seq = self.next_seq();
+            if self
+                .file
+                .write_all(&gnp::read_body(dst, seq, cmd, *sub))
+                .is_err()
+            {
+                break;
+            }
+            pending.insert(seq, *name);
+        }
+
+        let mut out = Vec::new();
+        let deadline = Instant::now() + Duration::from_millis(1500);
+        while !pending.is_empty() {
+            let Some(pkt) = self.next_packet(deadline) else {
+                break;
+            };
+            let Some(r) = gnp::parse_body(&pkt) else {
+                continue;
+            };
+            if r.cmd != cmd {
+                continue;
+            }
+            if let Some(name) = pending.remove(&r.seq) {
+                out.push((name, r.data.to_vec()));
+            }
+        }
+        out.sort_by_key(|(n, _)| *n);
+        out
+    }
+
+    fn next_seq(&mut self) -> u8 {
+        self.seq = self.seq.wrapping_add(1);
+        if self.seq == 0 {
+            self.seq = 1;
+        }
+        self.seq
+    }
+
+    /// Ein vollständiges Paket aus dem Strom, entrahmt über das Längenfeld.
+    fn next_packet(&mut self, deadline: Instant) -> Option<Vec<u8>> {
+        loop {
+            if self.buf.len() >= gnp::HEADER_LEN {
+                let len = (self.buf[3] & 0x3F) as usize;
+                if len >= gnp::HEADER_LEN && self.buf.len() >= len {
+                    return Some(self.buf.drain(..len).collect());
+                }
+                if len < gnp::HEADER_LEN {
+                    // Unbrauchbares Längenfeld: Strom ist aus dem Tritt.
+                    self.buf.clear();
+                    return None;
+                }
+            }
+            let now = Instant::now();
+            if now >= deadline || !readable(&self.file, deadline - now) {
+                return None;
+            }
+            let mut chunk = [0u8; 256];
+            match self.file.read(&mut chunk) {
+                Ok(0) | Err(_) => return None,
+                Ok(n) => self.buf.extend_from_slice(&chunk[..n]),
+            }
+        }
     }
 }
 
@@ -128,5 +203,6 @@ pub async fn connect(conn: &zbus::Connection, device: &str) -> Option<Session> {
     Some(Session {
         file: std::fs::File::from(fd),
         seq: 0x40,
+        buf: Vec::new(),
     })
 }

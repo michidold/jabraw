@@ -34,9 +34,9 @@ headset and dongle, and an overview of its settings.
 
 Paired straight over Bluetooth it all still works. The buttons travel
 over AVRCP and the desktop forwards them to MPRIS, and jabraw reaches the
-headset over RFCOMM for the rest, which is more precise than the HFP
-figure BlueZ reports — 93% against 100% in one measurement. Charging
-state is the one thing that still needs the dongle.
+headset over RFCOMM for the rest — battery, charging state, firmware,
+serial number and settings. That is also more precise than the HFP figure
+BlueZ reports, 93% against 100% in one measurement.
 
 The interface follows the locale, English by default and German on a
 German `LC_ALL`, `LC_MESSAGES` or `LANG`.

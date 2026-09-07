@@ -18,7 +18,7 @@ use crate::gnp;
 /// Bekannte, für Anwender bedeutsame Einstellungen. Andere Subcommands der
 /// Gruppe sind Betriebsdaten (Uhrzeit, Feature-Masken, Passwortfelder) und
 /// gehören nicht in eine Übersicht.
-const SETTINGS: &[(u8, &str)] = &[
+pub const SETTINGS: &[(u8, &str)] = &[
     (0, "audioType"),
     (1, "intellitoneLevel"),
     (2, "touchAudioFeedback"),
@@ -76,6 +76,17 @@ const SETTINGS: &[(u8, &str)] = &[
     (153, "streamPriority"),
     (188, "callAcceptedSound"),
 ];
+
+/// Wandelt die Antworten einer RFCOMM-Abfrage in Anzeigezeilen.
+pub fn from_sweep(rows: Vec<(&'static str, Vec<u8>)>) -> Vec<Setting> {
+    rows.into_iter()
+        .map(|(name, value)| Setting {
+            device: "Headset",
+            name,
+            value,
+        })
+        .collect()
+}
 
 pub struct Setting {
     pub device: &'static str,

@@ -174,15 +174,23 @@ async fn show_device_info(info: &DeviceInfo, battery: Option<u8>, charging: bool
     notify(&text.replace('\n', " · ")).await;
 }
 
-/// Übersicht der Geräteeinstellungen als Tabelle.
-async fn show_settings(path: Option<String>) {
-    let s = strings();
-    let Some(path) = path else { return };
-    let settings = match tokio::task::spawn_blocking(move || config::read_all(&path)).await {
+async fn config_via_hidraw(path: String) -> Vec<config::Setting> {
+    match tokio::task::spawn_blocking(move || config::read_all(&path)).await {
         Ok(Ok(v)) => v,
-        Ok(Err(e)) => return eprintln!("reading settings failed: {e}"),
-        Err(e) => return eprintln!("settings task failed: {e}"),
-    };
+        Ok(Err(e)) => {
+            eprintln!("reading settings failed: {e}");
+            Vec::new()
+        }
+        Err(e) => {
+            eprintln!("settings task failed: {e}");
+            Vec::new()
+        }
+    }
+}
+
+/// Übersicht der Geräteeinstellungen als Tabelle.
+async fn show_settings(settings: Vec<config::Setting>) {
+    let s = strings();
     if settings.is_empty() {
         notify(s.no_settings).await;
         return;
@@ -460,7 +468,7 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
                         .or_else(|| names.values().next().cloned())
                         .or_else(|| bt.as_ref().map(|d| d.name.clone()));
                     let info_snapshot = info.clone();
-                    let has_gnp = !writers.is_empty();
+                    let has_gnp = !writers.is_empty() || session.is_some();
                     if ticks.is_multiple_of(SINKS_EVERY_N_TICKS) || sinks.is_empty() {
                         sinks = audio::list_sinks().await;
                     }
@@ -489,8 +497,25 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
                 Cmd::SetSink(id) => audio::set_default_sink(id).await,
                 Cmd::ShowInfo => show_device_info(&info, battery, charging).await,
                 Cmd::ShowSettings => {
-                    let path = watched.iter().next().cloned();
-                    show_settings(path).await;
+                    // Über hidraw, wenn ein Dongle steckt; sonst über die
+                    // bestehende RFCOMM-Sitzung.
+                    if let Some(path) = watched.iter().next().cloned() {
+                        show_settings(config_via_hidraw(path).await).await;
+                    } else if let Some(mut s) = session.take() {
+                        let out = tokio::task::spawn_blocking(move || {
+                            let rows = s.sweep(
+                                gnp::DST_HEADSET,
+                                gnp::CMD_CONFIG,
+                                config::SETTINGS,
+                            );
+                            (s, rows)
+                        })
+                        .await;
+                        if let Ok((s, rows)) = out {
+                            session = Some(s);
+                            show_settings(config::from_sweep(rows)).await;
+                        }
+                    }
                 }
                 // Beim Öffnen des Menüs die Geräteliste auffrischen, damit das
                 // seltene Abfrageintervall nicht zu veralteten Einträgen führt.
