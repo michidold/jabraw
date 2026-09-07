@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2021"
 description = "Jabra headset media keys and tray menu for Linux, via raw HID"
 repository = "https://github.com/michidold/jabraw"
+license = "GPL-3.0-or-later"
 
 [[bin]]
 name = "jabraw"

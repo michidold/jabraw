@@ -153,3 +153,7 @@ die der Kernel bereits als `KEY_*` meldet (`evtest` zeigt sie), gehören dort
 | `src/audio.rs` | Lautstärke/Mute/Ausgabegerät über `wpctl` bzw. `pactl` |
 | `src/tray.rs` | StatusNotifierItem-Menü |
 | `packaging/` | systemd-Unit, Autostart, `.deb`-Bauskript |
+
+## Lizenz
+
+GPL-3.0-or-later. Siehe [LICENSE](LICENSE).
