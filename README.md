@@ -39,9 +39,13 @@ those HID usages.
 ## Debug
 
 ```bash
+jabraw --version    # which build is actually running
 jabraw --debug      # print every raw report and the bits that changed
 jabraw --no-tray    # keys only, no tray icon
 ```
+
+The device information dialog shows the same version, because autostart runs
+the installed binary and an older package there is otherwise invisible.
 
 ## Without the dongle
 

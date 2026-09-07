@@ -144,6 +144,9 @@ async fn show_device_info(info: &DeviceInfo, battery: Option<u8>, charging: bool
     } else {
         text.push_str(&format!("\n{}\n", s.bluetooth_note));
     }
+    // Eigene Version mit anzeigen: sonst ist von außen nicht erkennbar, welcher
+    // Stand tatsächlich läuft, wenn Autostart ein älteres Paket startet.
+    text.push_str(&format!("\nJabraw {}\n", env!("CARGO_PKG_VERSION")));
 
     let attempts: [(&str, Vec<String>); 2] = [
         (
@@ -240,6 +243,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
+    if std::env::args().any(|a| a == "--version" || a == "-V") {
+        println!("jabraw {}", env!("CARGO_PKG_VERSION"));
+        return Ok(());
+    }
     let debug = std::env::args().any(|a| a == "--debug");
     // Monotone Laufzeit statt Uhrzeit: gemessen werden Abstände, nicht Termine.
     let started = std::time::Instant::now();
