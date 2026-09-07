@@ -1,6 +1,7 @@
 [Unit]
 Description=Jabra Headset Media Keys und Tray
 Documentation=file:///usr/share/doc/jabraw/README.md
+Documentation=https://github.com/michidold/jabraw
 PartOf=graphical-session.target
 After=graphical-session.target
 

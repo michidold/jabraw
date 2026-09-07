@@ -32,6 +32,7 @@ Section: sound
 Priority: optional
 Architecture: $ARCH
 Maintainer: Michael Dold <michidold@users.noreply.github.com>
+Homepage: https://github.com/michidold/jabraw
 Depends: libc6, udev
 Conflicts: jabra-media-daemon
 Replaces: jabra-media-daemon
