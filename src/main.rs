@@ -156,6 +156,8 @@ async fn show_device_info(info: &DeviceInfo, battery: Option<u8>, charging: bool
             vec![
                 "--info".into(),
                 "--title=Jabraw".into(),
+                // Dasselbe Symbol wie im Tray, sofern das Paket installiert ist.
+                "--icon=jabraw".into(),
                 "--no-wrap".into(),
                 format!("--text={text}"),
             ],
@@ -197,14 +199,18 @@ async fn show_settings(settings: Vec<config::Setting>) {
         return;
     }
 
+    // Kein --icon: zenity kennt die Option nur beim Info-Dialog und lehnt den
+    // Aufruf mit --list andernfalls ab.
     let mut args = vec![
         "--list".to_string(),
         "--title=Jabraw".to_string(),
         format!("--text={}", s.settings.trim_end_matches(" …")),
         "--width=520".to_string(),
         "--height=560".to_string(),
+        // Kein leerer Spaltenname: zenity 4 kehrt dann sofort mit der ersten
+        // Zeile zurueck, statt den Dialog anzuzeigen.
         "--column".to_string(),
-        String::new(),
+        s.device_col.to_string(),
         "--column".to_string(),
         s.setting.to_string(),
         "--column".to_string(),
