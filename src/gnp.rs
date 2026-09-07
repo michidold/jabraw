@@ -41,17 +41,26 @@ pub const SUB_NAME: u8 = 0;
 pub const SUB_SERIAL: u8 = 1;
 pub const SUB_VERSION: u8 = 3;
 
-/// Lese-Anfrage, fertig zum Schreiben auf den hidraw-Knoten (führendes Byte ist
-/// die Report-ID).
+/// Der nackte Paketkopf einer Leseanfrage, ohne Transporthülle.
+///
+/// Über hidraw kommt die Report-ID davor, über RFCOMM nichts — beides am Gerät
+/// geprüft.
+pub fn read_body(dst: u8, seq: u8, cmd: u8, sub: u8) -> [u8; HEADER_LEN] {
+    [
+        dst,
+        SRC_PC,
+        seq,
+        (TYPE_READ << 6) | HEADER_LEN as u8,
+        cmd,
+        sub,
+    ]
+}
+
+/// Lese-Anfrage für den hidraw-Knoten: führendes Byte ist die Report-ID.
 pub fn read_request(dst: u8, seq: u8, cmd: u8, sub: u8) -> [u8; 1 + REPORT_SIZE] {
     let mut out = [0u8; 1 + REPORT_SIZE];
     out[0] = REPORT_ID;
-    out[1] = dst;
-    out[2] = SRC_PC;
-    out[3] = seq;
-    out[4] = (TYPE_READ << 6) | HEADER_LEN as u8;
-    out[5] = cmd;
-    out[6] = sub;
+    out[1..1 + HEADER_LEN].copy_from_slice(&read_body(dst, seq, cmd, sub));
     out
 }
 
@@ -66,7 +75,11 @@ pub struct Response<'a> {
 
 /// Zerlegt einen eingehenden Report 5. `report` beginnt mit der Report-ID.
 pub fn parse(report: &[u8]) -> Option<Response<'_>> {
-    let body = report.strip_prefix(&[REPORT_ID])?;
+    parse_body(report.strip_prefix(&[REPORT_ID])?)
+}
+
+/// Zerlegt ein Paket ohne Transporthülle, wie es über RFCOMM ankommt.
+pub fn parse_body(body: &[u8]) -> Option<Response<'_>> {
     if body.len() < HEADER_LEN {
         return None;
     }
@@ -98,6 +111,11 @@ pub fn battery_percent(data: &[u8]) -> Option<u8> {
     }
 }
 
+/// Nur für die über den Dongle vermittelte Antwort gültig.
+///
+/// Direkt am Headset abgefragt hat Byte 0 eine andere Bedeutung — beobachtet
+/// wurden `0x24` und `0x15` statt eines Schalters —, dort ist der Ladezustand
+/// bislang nicht identifiziert.
 pub fn battery_charging(data: &[u8]) -> bool {
     data.first().is_some_and(|&b| b != 0)
 }

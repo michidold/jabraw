@@ -16,6 +16,8 @@ const JABRA_VENDOR_PREFIX: &str = "bluetooth:v0067";
 pub struct BtDevice {
     pub name: String,
     pub battery: Option<u8>,
+    /// BlueZ-Objektpfad, für den RFCOMM-Verbindungsaufbau.
+    pub path: String,
 }
 
 type Managed = HashMap<OwnedObjectPath, HashMap<String, HashMap<String, OwnedValue>>>;
@@ -41,7 +43,7 @@ pub async fn connected_jabra(conn: &zbus::Connection) -> Option<BtDevice> {
         .ok()?;
     let objects: Managed = proxy.call("GetManagedObjects", &()).await.ok()?;
 
-    for ifaces in objects.into_values() {
+    for (path, ifaces) in objects {
         let Some(dev) = ifaces.get("org.bluez.Device1") else {
             continue;
         };
@@ -58,6 +60,7 @@ pub async fn connected_jabra(conn: &zbus::Connection) -> Option<BtDevice> {
             battery: ifaces
                 .get("org.bluez.Battery1")
                 .and_then(|b| field::<u8>(b, "Percentage")),
+            path: path.to_string(),
         });
     }
     None

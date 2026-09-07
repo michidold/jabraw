@@ -5,6 +5,7 @@ mod gnp;
 mod hid;
 mod i18n;
 mod mpris;
+mod rfcomm;
 mod tray;
 
 use std::collections::{HashMap, HashSet};
@@ -293,6 +294,8 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
     let mut info = DeviceInfo::default();
     let mut sinks: Vec<audio::Sink> = Vec::new();
     let mut bt: Option<bluetooth::BtDevice> = None;
+    let mut bt_path: Option<String> = None;
+    let mut session: Option<rfcomm::Session> = None;
     let mut seq: u8 = 0;
     // Ordnet Antworten den eigenen Anfragen zu; das Gerät sendet auf diesem
     // Kanal auch unaufgefordert.
@@ -388,9 +391,11 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
                             Some(c) => bluetooth::connected_jabra(c).await,
                             None => None,
                         };
+                        bt_path = bt.as_ref().map(|d| d.path.clone());
                     }
                     battery = bt.as_ref().and_then(|d| d.battery);
-                    // BlueZ meldet über HFP nur den Füllstand, keinen Ladezustand.
+                    // Der Ladezustand ist über RFCOMM noch nicht identifiziert
+                    // und über HFP gar nicht vorhanden.
                     charging = false;
                     info = match &bt {
                         Some(d) => DeviceInfo {
@@ -399,6 +404,47 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
                         },
                         None => DeviceInfo::default(),
                     };
+
+                    // GNP über RFCOMM liefert genauere Werte als der grobe
+                    // HFP-Indikator, dazu Firmware und Seriennummer.
+                    if bt.is_none() {
+                        session = None;
+                    } else if session.is_none() {
+                        if let (Some(c), Some(p)) = (&system, &bt_path) {
+                            session = rfcomm::connect(c, p).await;
+                            if session.is_some() {
+                                println!("GNP over RFCOMM established");
+                            }
+                        }
+                    }
+                    if let Some(mut s) = session.take() {
+                        let out = tokio::task::spawn_blocking(move || {
+                            let d = gnp::DST_HEADSET;
+                            let name = s.read(d, gnp::CMD_IDENT, gnp::SUB_NAME);
+                            let ver = s.read(d, gnp::CMD_IDENT, gnp::SUB_VERSION);
+                            let ser = s.read(d, gnp::CMD_IDENT, gnp::SUB_SERIAL);
+                            let bat = s.read(d, gnp::CMD_STATUS, gnp::SUB_HS_BATTERY);
+                            (s, name, ver, ser, bat)
+                        })
+                        .await;
+                        if let Ok((s, name, ver, ser, bat)) = out {
+                            let any = name.is_some() || bat.is_some();
+                            if let Some(v) = name.as_deref().and_then(gnp::text) {
+                                info.headset_name = Some(v);
+                            }
+                            if let Some(v) = ver.as_deref().and_then(gnp::text) {
+                                info.headset_version = Some(v);
+                            }
+                            if let Some(v) = ser.as_deref().and_then(gnp::text) {
+                                info.headset_serial = Some(v);
+                            }
+                            if let Some(p) = bat.as_deref().and_then(gnp::battery_percent) {
+                                battery = Some(p);
+                            }
+                            // Bleibt alles stumm, ist die Verbindung tot.
+                            session = any.then_some(s);
+                        }
+                    }
                 }
                 ticks = ticks.wrapping_add(1);
                 if let Some(handle) = &tray {

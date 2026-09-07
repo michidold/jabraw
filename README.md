@@ -33,9 +33,10 @@ device reports about itself — model, firmware and serial number for both
 headset and dongle, and an overview of its settings.
 
 Paired straight over Bluetooth it all still works. The buttons travel
-over AVRCP and the desktop forwards them to MPRIS, BlueZ reports the
-battery, and jabraw picks the headset up from there. Charging state,
-firmware and settings need the dongle; see issue #1.
+over AVRCP and the desktop forwards them to MPRIS, and jabraw reaches the
+headset over RFCOMM for the rest, which is more precise than the HFP
+figure BlueZ reports — 93% against 100% in one measurement. Charging
+state is the one thing that still needs the dongle.
 
 The interface follows the locale, English by default and German on a
 German `LC_ALL`, `LC_MESSAGES` or `LANG`.
@@ -61,7 +62,7 @@ Battery, device data and settings come from Jabra's GNP protocol on the
 vendor report:
 
 ```text
-byte 0   destination      0x01 dongle, 0x04 headset
+byte 0   destination      0x01 dongle, 0x04 headset (also over Bluetooth)
 byte 1   source           0x00 = PC
 byte 2   sequence number  mirrored in the reply
 byte 3   (type << 6) | total length in bytes
@@ -72,7 +73,9 @@ byte 6+  payload
 
 The layout was derived from the traffic Jabra's own SDK produces, so
 jabraw sends nothing the vendor tool does not send itself, and no
-proprietary library is involved at runtime. Reading only — the same
+proprietary library is involved at runtime. Over hidraw the packet sits
+behind report id `0x05`; over Bluetooth RFCOMM it goes out bare, with
+BlueZ finding the channel through a registered Serial Port profile. Reading only — the same
 subcommands are writable and would change device configuration for good.
 
 ## License
