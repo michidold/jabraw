@@ -27,6 +27,7 @@ pub struct HeadsetTray {
     pub device: Option<String>,
     pub audio: AudioState,
     pub player: Option<PlayerInfo>,
+    pub battery: Option<u8>,
     pub tx: UnboundedSender<Cmd>,
 }
 
@@ -47,9 +48,10 @@ impl ksni::Tray for HeadsetTray {
     }
 
     fn title(&self) -> String {
-        match &self.device {
-            Some(d) => d.clone(),
-            None => "Kein Jabra-Gerät".into(),
+        match (&self.device, self.battery) {
+            (Some(d), Some(p)) => format!("{d} — {p} %"),
+            (Some(d), None) => d.clone(),
+            (None, _) => "Kein Jabra-Gerät".into(),
         }
     }
 
@@ -76,9 +78,10 @@ impl ksni::Tray for HeadsetTray {
 
         items.push(
             StandardItem {
-                label: match &self.device {
-                    Some(d) => format!("{d} — verbunden"),
-                    None => "Nicht verbunden".into(),
+                label: match (&self.device, self.battery) {
+                    (Some(d), Some(p)) => format!("{d} — Akku {p} %"),
+                    (Some(d), None) => format!("{d} — verbunden"),
+                    (None, _) => "Nicht verbunden".into(),
                 },
                 enabled: false,
                 ..Default::default()

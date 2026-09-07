@@ -1,4 +1,5 @@
 mod audio;
+mod gnp;
 mod hid;
 mod mpris;
 mod tray;
@@ -10,11 +11,14 @@ use ksni::TrayMethods;
 use tokio::sync::mpsc;
 
 use audio::Target;
+use std::io::Write;
 use hid::{Action, Msg};
 use tray::{Cmd, HeadsetTray};
 
 /// Takt für Geräte-Rescan und Auffrischen der Tray-Anzeige.
 const REFRESH_INTERVAL: Duration = Duration::from_secs(2);
+/// Akkuabfrage alle 30 s, also jeden 15. Durchlauf.
+const BATTERY_EVERY_N_TICKS: u32 = 15;
 
 /// Kurzer Statusbericht als Desktop-Benachrichtigung.
 async fn notify_status(conn: &zbus::Connection) {
@@ -113,6 +117,15 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
     let (hid_tx, mut hid_rx) = mpsc::unbounded_channel::<Msg>();
     let (cmd_tx, mut cmd_rx) = mpsc::unbounded_channel::<Cmd>();
 
+    // Schreibende Kopien der Geraete-Handles fuer GNP-Anfragen.
+    let mut writers: HashMap<String, std::fs::File> = HashMap::new();
+    let mut battery: Option<u8> = None;
+    let mut seq: u8 = 0;
+    // Ordnet die Antwort der eigenen Anfrage zu; das Geraet sendet auf diesem
+    // Kanal auch unaufgefordert.
+    let mut pending_battery_seq: Option<u8> = None;
+    let mut ticks: u32 = 0;
+
     let mut watched: HashSet<String> = HashSet::new();
     let mut names: HashMap<String, String> = HashMap::new();
     let mut warned: HashSet<String> = HashSet::new();
@@ -126,6 +139,7 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
             device: None,
             audio: audio::AudioState::default(),
             player: None,
+            battery: None,
             tx: cmd_tx.clone(),
         })
         .spawn()
@@ -147,10 +161,25 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
             _ = ticker.tick() => {
                 for (path, name, file) in hid::scan(&watched, &mut warned) {
                     println!("überwache {path} ({name})");
+                    if let Ok(w) = file.try_clone() {
+                        writers.insert(path.clone(), w);
+                    }
                     watched.insert(path.clone());
                     names.insert(path.clone(), name);
                     hid::spawn_reader(path, file, hid_tx.clone());
                 }
+
+                // Akkustand seltener als die uebrige Anzeige abfragen; er
+                // aendert sich in Prozentschritten.
+                if ticks.is_multiple_of(BATTERY_EVERY_N_TICKS) {
+                    seq = seq.wrapping_add(1);
+                    let req = gnp::read_request(seq, gnp::CMD_STATUS, gnp::SUB_HS_BATTERY);
+                    for w in writers.values_mut() {
+                        let _ = w.write_all(&req);
+                    }
+                    pending_battery_seq = Some(seq);
+                }
+                ticks = ticks.wrapping_add(1);
                 if let Some(handle) = &tray {
                     let device = names.values().next().cloned();
                     let audio_state = audio::read_state().await;
@@ -159,6 +188,7 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
                         t.device = device;
                         t.audio = audio_state;
                         t.player = player;
+                        t.battery = battery;
                     }).await;
                 }
             }
@@ -182,6 +212,8 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
             Some(msg) = hid_rx.recv() => match msg {
                 Msg::Closed(path) => {
                     println!("{path} nicht mehr verfügbar");
+                    writers.remove(&path);
+                    battery = None;
                     watched.remove(&path);
                     names.remove(&path);
                     state.retain(|(p, _), _| *p != path);
@@ -191,6 +223,25 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
                         continue;
                     }
                     let report = data[0];
+                    if report == gnp::REPORT_ID {
+                        if let Some(r) = gnp::parse(&data) {
+                            if r.cmd == gnp::CMD_STATUS
+                                && r.sub == gnp::SUB_HS_BATTERY
+                                && pending_battery_seq == Some(r.seq)
+                            {
+                                pending_battery_seq = None;
+                                battery = gnp::battery_percent(r.data);
+                                if debug {
+                                    println!(
+                                        "  Akku: {:?} % laedt={}",
+                                        battery,
+                                        gnp::battery_charging(r.data)
+                                    );
+                                }
+                            }
+                        }
+                        continue;
+                    }
                     let bits = hid::payload_bits(&data);
                     let prev = state.entry((path.clone(), report)).or_insert(0);
                     let changed = bits ^ *prev;

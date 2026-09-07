@@ -23,9 +23,9 @@ Jabraw starts on its own from then on.
 Press the multi-function button to play or pause the active MPRIS player.
 The volume rocker keeps working as before, through the desktop.
 
-The tray icon has the rest: current player and track, next and previous,
-volume and mute for both speaker and microphone, and output device
-selection.
+The tray icon has the rest: headset battery level, current player and
+track, next and previous, volume and mute for both speaker and
+microphone, and output device selection.
 
 Skipping tracks from the headset itself is not possible — it never sends
 those HID usages.
@@ -36,6 +36,26 @@ those HID usages.
 jabraw --debug      # print every raw report and the bits that changed
 jabraw --no-tray    # keys only, no tray icon
 ```
+
+## Battery level
+
+The device exposes no HID battery usage page, so `upower` does not see it.
+The level comes from Jabra's own GNP protocol on the vendor report instead:
+
+```text
+byte 0   destination      0x01 = device
+byte 1   source           0x00 = PC
+byte 2   sequence number  mirrored in the reply
+byte 3   (type << 6) | total length in bytes
+byte 4   message type     18 = status
+byte 5   subcommand       2 = headset battery
+byte 6+  payload
+```
+
+A read of status/2 answers with four payload bytes whose second byte is the
+percentage. The packet layout was taken from the traffic Jabra's own SDK
+produces, so jabraw sends nothing the vendor tool does not send itself. No
+proprietary library is involved at runtime.
 
 ## Why this is needed
 

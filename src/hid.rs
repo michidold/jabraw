@@ -149,7 +149,9 @@ pub fn scan(
         if vendor != Some(JABRA_VENDOR) {
             continue;
         }
-        match std::fs::File::open(&dev_path) {
+        // Schreibend, weil der Vendor-Kanal Anfragen entgegennimmt; die
+        // udev-ACL vergibt ohnehin rw.
+        match std::fs::OpenOptions::new().read(true).write(true).open(&dev_path) {
             Ok(f) => {
                 warned.remove(&dev_path);
                 let name = device_name(&node).unwrap_or_else(|| "Jabra".into());
