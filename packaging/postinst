@@ -9,4 +9,8 @@ fi
 # Gestartet wird ausschliesslich ueber /etc/xdg/autostart. Die mitgelieferte
 # systemd-User-Unit ist die Alternative fuer Desktops ohne XDG-Autostart und
 # wird deshalb bewusst NICHT aktiviert - sonst laeuft der Daemon doppelt.
+# Ohne aktualisierten Cache zeigt die Anwendungsuebersicht weiter das alte Symbol.
+if command -v gtk-update-icon-cache >/dev/null 2>&1; then
+    gtk-update-icon-cache -qf /usr/share/icons/hicolor 2>/dev/null || true
+fi
 exit 0

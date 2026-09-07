@@ -93,3 +93,79 @@ fn capsule(x: f32, y: f32, ax: f32, ay: f32, bx: f32, by: f32, r: f32) -> bool {
     };
     (x - (ax + t * dx)).hypot(y - (ay + t * dy)) <= r
 }
+
+/// Das Symbol als PNG, für den Eintrag in der Anwendungsübersicht.
+///
+/// Eigener Encoder statt einer Bibliothek: PNG braucht einen zlib-Strom, und
+/// der darf laut Format unkomprimierte Blöcke enthalten. Für ein paar Kilobyte
+/// Symbol lohnt keine Abhängigkeit.
+pub fn png(size: u32) -> Vec<u8> {
+    let argb = render(size);
+    let mut raw = Vec::with_capacity((size * (size * 4 + 1)) as usize);
+    for y in 0..size {
+        raw.push(0); // Filtertyp "None"
+        for x in 0..size {
+            let i = ((y * size + x) * 4) as usize;
+            let (a, r, g, b) = (argb[i], argb[i + 1], argb[i + 2], argb[i + 3]);
+            raw.extend_from_slice(&[r, g, b, a]);
+        }
+    }
+
+    let mut out = b"\x89PNG\r\n\x1a\n".to_vec();
+    let mut ihdr = Vec::new();
+    ihdr.extend_from_slice(&size.to_be_bytes());
+    ihdr.extend_from_slice(&size.to_be_bytes());
+    ihdr.extend_from_slice(&[8, 6, 0, 0, 0]); // 8 bit, RGBA
+    chunk(&mut out, b"IHDR", &ihdr);
+    chunk(&mut out, b"IDAT", &zlib_stored(&raw));
+    chunk(&mut out, b"IEND", &[]);
+    out
+}
+
+fn chunk(out: &mut Vec<u8>, tag: &[u8; 4], data: &[u8]) {
+    out.extend_from_slice(&(data.len() as u32).to_be_bytes());
+    out.extend_from_slice(tag);
+    out.extend_from_slice(data);
+    let mut crc = Vec::with_capacity(4 + data.len());
+    crc.extend_from_slice(tag);
+    crc.extend_from_slice(data);
+    out.extend_from_slice(&crc32(&crc).to_be_bytes());
+}
+
+/// zlib-Strom aus gespeicherten, also unkomprimierten Deflate-Blöcken.
+fn zlib_stored(data: &[u8]) -> Vec<u8> {
+    let mut out = vec![0x78, 0x01];
+    for (i, part) in data.chunks(0xFFFF).enumerate() {
+        let last = (i + 1) * 0xFFFF >= data.len();
+        out.push(u8::from(last));
+        out.extend_from_slice(&(part.len() as u16).to_le_bytes());
+        out.extend_from_slice(&(!(part.len() as u16)).to_le_bytes());
+        out.extend_from_slice(part);
+    }
+    out.extend_from_slice(&adler32(data).to_be_bytes());
+    out
+}
+
+fn adler32(data: &[u8]) -> u32 {
+    let (mut a, mut b) = (1u32, 0u32);
+    for &byte in data {
+        a = (a + byte as u32) % 65521;
+        b = (b + a) % 65521;
+    }
+    (b << 16) | a
+}
+
+fn crc32(data: &[u8]) -> u32 {
+    let mut crc = 0xFFFF_FFFFu32;
+    for &byte in data {
+        crc ^= byte as u32;
+        for _ in 0..8 {
+            crc = if crc & 1 != 0 {
+                (crc >> 1) ^ 0xEDB8_8320
+            } else {
+                crc >> 1
+            };
+        }
+    }
+    !crc
+}

@@ -245,6 +245,16 @@ fn format_value(data: &[u8]) -> String {
     }
 }
 
+fn arg_value(flag: &str) -> Option<String> {
+    let mut it = std::env::args();
+    while let Some(a) = it.next() {
+        if a == flag {
+            return it.next();
+        }
+    }
+    None
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
@@ -253,6 +263,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
+    // Vom Bauskript genutzt, um die Symbole für die Anwendungsübersicht zu
+    // erzeugen; dieselbe Zeichnung wie im Tray.
+    if let Some(dir) = arg_value("--write-icons") {
+        for size in [16u32, 24, 32, 48, 64, 128, 256] {
+            let path = format!("{dir}/{size}x{size}.png");
+            std::fs::write(&path, icon::png(size))?;
+            println!("{path}");
+        }
+        return Ok(());
+    }
     if std::env::args().any(|a| a == "--version" || a == "-V") {
         println!("jabraw {}", env!("CARGO_PKG_VERSION"));
         return Ok(());

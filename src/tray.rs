@@ -74,13 +74,9 @@ impl ksni::Tray for HeadsetTray {
         }
     }
 
-    /// Eigenes Symbol statt eines Themennamens, damit es überall gleich
-    /// aussieht. `icon_name` bleibt als Rückfall für Hosts, die keine Pixmap
-    /// auswerten.
-    fn icon_name(&self) -> String {
-        "audio-headset".into()
-    }
-
+    // Kein `icon_name`: GNOMEs AppIndicator bevorzugt einen gesetzten Namen
+    // gegenüber der Pixmap und zeigte dann das Symbol aus dem Icon-Theme statt
+    // des eigenen. Ohne Namen bleibt nur die Pixmap.
     fn icon_pixmap(&self) -> Vec<ksni::Icon> {
         crate::icon::pixmaps()
             .iter()
