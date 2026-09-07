@@ -21,6 +21,7 @@ pub enum Cmd {
     ToggleSourceMute,
     Volume(i32),
     ShowInfo,
+    Refresh,
     SetSink(u32),
     Quit,
 }
@@ -73,6 +74,10 @@ impl ksni::Tray for HeadsetTray {
             Some(_) => ksni::Status::Active,
             None => ksni::Status::Passive,
         }
+    }
+
+    fn menu_about_to_show(&mut self) {
+        self.send(Cmd::Refresh);
     }
 
     fn menu(&self) -> Vec<ksni::MenuItem<Self>> {

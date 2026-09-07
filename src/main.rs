@@ -37,11 +37,13 @@ enum Pending {
 const REFRESH_INTERVAL: Duration = Duration::from_secs(2);
 /// Akkuabfrage alle 30 s, also jeden 15. Durchlauf.
 const BATTERY_EVERY_N_TICKS: u32 = 15;
+/// Ausgabegeräte alle 20 s neu einlesen; zusätzlich beim Öffnen des Menüs.
+const SINKS_EVERY_N_TICKS: u32 = 10;
 
 /// Kurzer Statusbericht als Desktop-Benachrichtigung.
 async fn notify_status(conn: &zbus::Connection) {
     let device = hid::present();
-    let state = audio::read_state().await;
+    let state = audio::read_levels().await;
     let player = mpris::active_player(conn).await;
 
     let mut body = vec![match &device {
@@ -192,6 +194,7 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
     let mut writers: HashMap<String, std::fs::File> = HashMap::new();
     let mut battery: Option<u8> = None;
     let mut info = DeviceInfo::default();
+    let mut sinks: Vec<audio::Sink> = Vec::new();
     let mut seq: u8 = 0;
     // Ordnet Antworten den eigenen Anfragen zu; das Gerät sendet auf diesem
     // Kanal auch unaufgefordert.
@@ -276,7 +279,11 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
                 if let Some(handle) = &tray {
                     let device = names.values().next().cloned();
                     let info_snapshot = info.clone();
-                    let audio_state = audio::read_state().await;
+                    if ticks.is_multiple_of(SINKS_EVERY_N_TICKS) || sinks.is_empty() {
+                        sinks = audio::list_sinks().await;
+                    }
+                    let mut audio_state = audio::read_levels().await;
+                    audio_state.sinks = sinks.clone();
                     let player = mpris::active_player(&conn).await;
                     handle.update(move |t: &mut HeadsetTray| {
                         t.device = device;
@@ -297,6 +304,9 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
                 Cmd::Volume(delta) => audio::change_volume(Target::Sink, delta).await,
                 Cmd::SetSink(id) => audio::set_default_sink(id).await,
                 Cmd::ShowInfo => show_device_info(&info, battery).await,
+                // Beim Öffnen des Menüs die Geräteliste auffrischen, damit das
+                // seltene Abfrageintervall nicht zu veralteten Einträgen führt.
+                Cmd::Refresh => sinks = audio::list_sinks().await,
                 Cmd::Quit => {
                     if let Some(handle) = &tray {
                         handle.shutdown().await;

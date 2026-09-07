@@ -127,7 +127,7 @@ async fn read_target(target: Target) -> (f32, bool) {
 
 /// Ausgabegeräte aus `pw-dump`. Der Standard-Sink steht im Metadata-Objekt
 /// unter `default.audio.sink` und wird über den Knotennamen zugeordnet.
-async fn list_sinks() -> Vec<Sink> {
+pub async fn list_sinks() -> Vec<Sink> {
     let Some(json) = output("pw-dump", &[]).await else {
         return vec![];
     };
@@ -170,7 +170,14 @@ async fn list_sinks() -> Vec<Sink> {
     sinks
 }
 
-pub async fn read_state() -> AudioState {
+/// Lautstärke und Stummschaltung. Billig genug für den Anzeigetakt: zwei
+/// `wpctl`-Aufrufe zu je rund 3 ms.
+///
+/// Die Geräteliste steckt bewusst nicht darin — sie kommt aus `pw-dump`, das
+/// den gesamten PipeWire-Graphen serialisiert (rund 500 KB, 45 ms) und im
+/// Zweisekundentakt spürbar Last erzeugt hat, obwohl sich Ausgabegeräte kaum
+/// ändern und das Menü meist geschlossen ist.
+pub async fn read_levels() -> AudioState {
     let (sink_volume, sink_muted) = read_target(Target::Sink).await;
     let (source_volume, source_muted) = read_target(Target::Source).await;
     AudioState {
@@ -178,7 +185,7 @@ pub async fn read_state() -> AudioState {
         sink_volume,
         source_muted,
         source_volume,
-        sinks: list_sinks().await,
+        sinks: Vec::new(),
     }
 }
 
