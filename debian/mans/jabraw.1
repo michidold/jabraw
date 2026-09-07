@@ -1,0 +1,72 @@
+.TH JABRAW 1 "September 2026" "jabraw" "User Commands"
+.SH NAME
+jabraw \- media keys and tray menu for Jabra headsets
+.SH SYNOPSIS
+.B jabraw
+.RI [ options ]
+.SH DESCRIPTION
+The multi-function button on Jabra headsets does nothing on Linux. The
+Link 380 dongle declares the relevant bits as Constant in its HID report
+descriptor, and
+.BR hid-input (4)
+skips constant fields, so the kernel allocates no key code and evdev never
+sees the press.
+.PP
+.B jabraw
+reads the raw hidraw reports instead and forwards the button to the active
+MPRIS player. It runs as a tray icon using the StatusNotifierItem protocol,
+showing battery level and charging state, the current player and track,
+volume and mute for speaker and microphone, and output device selection.
+.PP
+Paired over Bluetooth rather than through the dongle, the same data is read
+over an RFCOMM connection that BlueZ establishes. Devices are matched by
+vendor id, USB 0b0e and Bluetooth 0067, not by model.
+.PP
+The volume rocker is deliberately left alone. The kernel maps it to
+.B KEY_VOLUMEUP
+and
+.BR KEY_VOLUMEDOWN ,
+and the desktop already acts on those; handling it here as well would change
+the volume twice per press.
+.SH OPTIONS
+.TP
+.B \-\-version, \-V
+Print the version and exit. Autostart runs the installed binary, so this is
+how to tell which build is actually running.
+.TP
+.B \-\-debug
+Print every raw HID report and the bits that changed, with their usage names.
+This is how further buttons are identified.
+.TP
+.B \-\-no\-tray
+Run without a tray icon, handling keys only. Useful where no
+StatusNotifierItem host is present.
+.TP
+.BI \-\-write\-icons " directory"
+Write the application icons as PNG files and exit. Used when building the
+package.
+.SH FILES
+.TP
+.I /usr/lib/udev/rules.d/70\-jabraw.rules
+Grants the logged-in user access to the Jabra hidraw node through a uaccess
+ACL. The file has to sort before
+.IR 73\-seat\-late.rules ,
+which is what turns the tag into an ACL.
+.TP
+.I /usr/share/wireplumber/wireplumber.conf.d/50\-jabraw\-no\-suspend.conf
+Keeps WirePlumber from suspending the Jabra audio nodes. Without it the
+dongle tears down the USB audio stream while idle, and the next play takes
+long enough to look like a lost key press.
+.TP
+.I /etc/xdg/autostart/jabraw.desktop
+Starts jabraw on login. The systemd user unit shipped alongside is an
+alternative for environments without XDG autostart and is deliberately not
+enabled, since enabling both would start the daemon twice.
+.SH EXIT STATUS
+Exits 0 when another instance already holds the D-Bus name
+.IR io.github.michidold.Jabraw ,
+after reporting the current state, so autostart does not treat it as a crash.
+.SH BUGS
+Report bugs at https://github.com/michidold/jabraw/issues
+.SH AUTHOR
+Michael Dold

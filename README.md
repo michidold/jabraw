@@ -16,6 +16,20 @@ sudo apt install ./target/deb/jabraw_*.deb
 systemctl --user restart wireplumber
 ```
 
+That script is the quick path and what the release workflow uses. A Debian
+source package lives in `debian/` for distribution through an archive:
+
+```bash
+sudo apt build-dep .
+dpkg-buildpackage -b -us -uc
+```
+
+Note what still stands between that and a Debian upload: the archive builds
+Rust software offline against packaged crates, so every dependency would have
+to exist there as a `librust-*-dev` package and `debian/rules` would move to
+`dh-cargo`. Until then the source package builds locally and in CI, but not on
+a Debian buildd.
+
 Replug the dongle so udev applies the ACL, then log out and back in.
 Autostart runs the installed binary from then on, so reinstall after
 rebuilding — `jabraw --version` and the device information dialog both

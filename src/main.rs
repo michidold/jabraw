@@ -290,6 +290,7 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
     // Used by the build script to generate the application menu icons, from the
     // same drawing as the tray.
     if let Some(dir) = arg_value("--write-icons") {
+        std::fs::create_dir_all(&dir)?;
         for size in [16u32, 24, 32, 48, 64, 128, 256] {
             let path = format!("{dir}/{size}x{size}.png");
             std::fs::write(&path, icon::png(size))?;

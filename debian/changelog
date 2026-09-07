@@ -1,0 +1,5 @@
+jabraw (0.3.4-1) unstable; urgency=medium
+
+  * Initial Debian packaging.
+
+ -- Michael Dold <michidold@users.noreply.github.com>  Mon, 07 Sep 2026 22:00:00 +0200

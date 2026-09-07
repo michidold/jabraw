@@ -1,0 +1,38 @@
+#!/usr/bin/make -f
+
+# Cargo must not touch the user home during a package build.
+export CARGO_HOME = $(CURDIR)/debian/cargo
+export DEB_BUILD_MAINT_OPTIONS = hardening=+all
+
+%:
+	dh $@
+
+override_dh_auto_build:
+	cargo build --release --locked
+	target/release/jabraw --write-icons debian/icons
+
+override_dh_auto_test:
+	cargo test --release --locked
+
+override_dh_auto_clean:
+	cargo clean
+	rm -rf debian/cargo debian/icons
+
+override_dh_auto_install:
+	install -Dm755 target/release/jabraw \
+		debian/jabraw/usr/bin/jabraw
+	install -Dm644 70-jabraw.rules \
+		debian/jabraw/usr/lib/udev/rules.d/70-jabraw.rules
+	install -Dm644 packaging/jabraw.service \
+		debian/jabraw/usr/lib/systemd/user/jabraw.service
+	install -Dm644 packaging/jabraw-autostart.desktop \
+		debian/jabraw/etc/xdg/autostart/jabraw.desktop
+	install -Dm644 packaging/jabraw.desktop \
+		debian/jabraw/usr/share/applications/jabraw.desktop
+	install -Dm644 packaging/50-jabraw-no-suspend.conf \
+		debian/jabraw/usr/share/wireplumber/wireplumber.conf.d/50-jabraw-no-suspend.conf
+	set -e; for f in debian/icons/*.png; do \
+		dim=$$(basename $$f .png); \
+		install -Dm644 $$f \
+			debian/jabraw/usr/share/icons/hicolor/$$dim/apps/jabraw.png; \
+	done

@@ -1,0 +1,40 @@
+Source: jabraw
+Section: sound
+Priority: optional
+Maintainer: Michael Dold <michidold@users.noreply.github.com>
+Build-Depends:
+ debhelper-compat (= 13),
+ cargo,
+ rustc (>= 1.87),
+Standards-Version: 4.7.0
+Homepage: https://github.com/michidold/jabraw
+Vcs-Git: https://github.com/michidold/jabraw.git
+Vcs-Browser: https://github.com/michidold/jabraw
+Rules-Requires-Root: no
+
+Package: jabraw
+Architecture: any
+Depends:
+ ${shlibs:Depends},
+ ${misc:Depends},
+Recommends:
+ pipewire,
+ wireplumber,
+ zenity,
+Suggests:
+ gnome-shell-extension-appindicator,
+Description: media keys and tray menu for Jabra headsets
+ The multi-function button on Jabra headsets does nothing on Linux. The
+ Link 380 dongle declares the relevant bits as Constant in its HID report
+ descriptor, and the kernel skips constant fields, so no key code is ever
+ allocated and evdev never sees the press.
+ .
+ Jabraw reads the raw hidraw reports instead and forwards the button to
+ the active MPRIS player. It adds a StatusNotifierItem tray menu showing
+ battery level and charging state, the current player and track, volume
+ and mute for speaker and microphone, and output device selection, plus
+ dialogs for device information and settings.
+ .
+ Paired over Bluetooth rather than through the dongle, the same data is
+ read over RFCOMM. Devices are matched by vendor id, so models other than
+ the one this was developed against may work.
