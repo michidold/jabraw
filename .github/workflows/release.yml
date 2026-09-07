@@ -1,0 +1,45 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+# Für das Anlegen des Releases und das Anhängen des Pakets.
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Vollständige Historie, sonst fehlt der Text des annotierten Tags.
+          fetch-depth: 0
+
+      - name: Check that the tag matches Cargo.toml
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          crate=$(sed -n '0,/^version = /s/^version = "\(.*\)"/\1/p' Cargo.toml)
+          if [ "$tag" != "$crate" ]; then
+            echo "Tag $GITHUB_REF_NAME does not match Cargo.toml version $crate" >&2
+            exit 1
+          fi
+          echo "version=$crate" >> "$GITHUB_OUTPUT"
+        id: version
+
+      - name: Build the package
+        run: ./packaging/build-deb.sh
+
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version="${{ steps.version.outputs.version }}"
+          notes=$(git tag -l --format='%(contents:body)' "$GITHUB_REF_NAME")
+          [ -n "$notes" ] || notes="See the commit log for what changed."
+          gh release create "$GITHUB_REF_NAME" \
+            --title "jabraw $version" \
+            --notes "$notes" \
+            target/deb/jabraw_"$version"_*.deb
