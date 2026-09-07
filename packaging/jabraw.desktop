@@ -1,8 +1,8 @@
 [Desktop Entry]
 Type=Application
-Name=Jabra Headset
+Name=Jabraw
 Comment=Status des Jabra-Headsets anzeigen, Daemon starten
-Exec=/usr/bin/jabra-media-daemon
+Exec=/usr/bin/jabraw
 Icon=audio-headset
 Terminal=false
 Categories=AudioVideo;Audio;

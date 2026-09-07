@@ -1,10 +1,10 @@
 [package]
-name = "jabra-media-daemon"
+name = "jabraw"
 version = "0.1.0"
 edition = "2021"
 
 [[bin]]
-name = "jabra-media-daemon"
+name = "jabraw"
 path = "src/main.rs"
 
 [dependencies]

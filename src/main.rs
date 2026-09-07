@@ -58,10 +58,10 @@ async fn notify_status(conn: &zbus::Connection) {
         .call(
             "Notify",
             &(
-                "Jabra Headset",
+                "Jabraw",
                 0u32,
                 "audio-headset",
-                "Jabra Headset",
+                "Jabraw",
                 body.join("\n"),
                 Vec::<String>::new(),
                 std::collections::HashMap::<String, zbus::zvariant::Value>::new(),
@@ -91,7 +91,7 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
     // PID-Datei, weil D-Bus ihn beim Prozessende selbst freigibt.
     match conn
         .request_name_with_flags(
-            "io.github.michidold.JabraMediaDaemon",
+            "io.github.michidold.Jabraw",
             zbus::fdo::RequestNameFlags::DoNotQueue.into(),
         )
         .await
@@ -103,7 +103,7 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
         Ok(_) | Err(zbus::Error::NameTaken) => {
             // Aufruf über den Menüeintrag bei schon laufendem Daemon: statt
             // wortlos zu enden, den aktuellen Zustand melden.
-            eprintln!("jabra-media-daemon läuft bereits — zeige Status");
+            eprintln!("jabraw läuft bereits — zeige Status");
             notify_status(&conn).await;
             return Ok(());
         }

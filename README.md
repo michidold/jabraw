@@ -1,4 +1,7 @@
-# jabra-media-daemon
+# Jabraw
+
+*Jabra* über *hidraw* — daher der Name: die Medientasten sind nur über den
+rohen HID-Kanal erreichbar, nicht über evdev (siehe unten).
 
 Medientasten und Tray-Menü für Jabra-Headsets (Evolve2 65 über Link-380-Dongle,
 USB-Vendor `0b0e`) unter Linux. Jabra bietet seine Headset-Software nur für
@@ -85,11 +88,11 @@ pausierten Player wirkungslos.
 
 ```bash
 ./packaging/build-deb.sh
-sudo dpkg -i target/deb/jabra-media-daemon_*.deb
+sudo dpkg -i target/deb/jabraw_*.deb
 ```
 
 Danach den Dongle einmal ab- und wieder anstecken, damit die udev-ACL gesetzt
-wird, und neu anmelden (oder `/usr/bin/jabra-media-daemon &` starten).
+wird, und neu anmelden (oder `/usr/bin/jabraw &` starten).
 
 Gestartet wird über `/etc/xdg/autostart` — das funktioniert auf GNOME, KDE und
 den üblichen wlroots-Panels gleichermaßen. Die mitgelieferte systemd-User-Unit
@@ -98,19 +101,19 @@ automatisch aktiviert; sonst liefe der Daemon doppelt. Wer sie stattdessen
 nutzen will:
 
 ```bash
-sudo rm /etc/xdg/autostart/jabra-media-daemon.desktop
-systemctl --user enable --now jabra-media-daemon.service
+sudo rm /etc/xdg/autostart/jabraw.desktop
+systemctl --user enable --now jabraw.service
 ```
 
 Eine zweite Instanz beendet sich ohnehin von selbst: der Daemon belegt den
-D-Bus-Namen `io.github.michidold.JabraMediaDaemon` als Einzelinstanz-Sperre.
+D-Bus-Namen `io.github.michidold.Jabraw` als Einzelinstanz-Sperre.
 
 ### Ohne Paket
 
 ```bash
-sudo cp 70-jabra.rules /etc/udev/rules.d/
+sudo cp 70-jabraw.rules /etc/udev/rules.d/
 sudo udevadm control --reload-rules && sudo udevadm trigger
-cargo build --release && ./target/release/jabra-media-daemon
+cargo build --release && ./target/release/jabraw
 ```
 
 Die udev-Regel **muss** eine Nummer < 73 tragen: `73-seat-late.rules` wertet den
@@ -124,8 +127,8 @@ getfacl -p /dev/hidraw2 | grep '^user:'   # muss user:<name>:rw- enthalten
 ## Diagnose
 
 ```bash
-jabra-media-daemon --debug      # jeden Rohreport samt geänderter Bits ausgeben
-jabra-media-daemon --no-tray    # nur Tastensteuerung, ohne Tray
+jabraw --debug      # jeden Rohreport samt geänderter Bits ausgeben
+jabraw --no-tray    # nur Tastensteuerung, ohne Tray
 ```
 
 `--debug` zeigt Bitnummer und Usage-Namen jeder Änderung. Damit lassen sich

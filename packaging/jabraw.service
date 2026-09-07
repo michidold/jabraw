@@ -1,12 +1,12 @@
 [Unit]
 Description=Jabra Headset Media Keys und Tray
-Documentation=file:///usr/share/doc/jabra-media-daemon/README.md
+Documentation=file:///usr/share/doc/jabraw/README.md
 PartOf=graphical-session.target
 After=graphical-session.target
 
 [Service]
 Type=simple
-ExecStart=/usr/bin/jabra-media-daemon
+ExecStart=/usr/bin/jabraw
 Restart=on-failure
 RestartSec=5
 

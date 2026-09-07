@@ -6,33 +6,35 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 VERSION=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
 ARCH=$(dpkg --print-architecture)
-PKG="jabra-media-daemon_${VERSION}_${ARCH}"
+PKG="jabraw_${VERSION}_${ARCH}"
 ROOT="target/deb/$PKG"
 
 cargo build --release
 
 rm -rf "$ROOT"
-install -Dm755 target/release/jabra-media-daemon  "$ROOT/usr/bin/jabra-media-daemon"
-install -Dm644 70-jabra.rules                     "$ROOT/usr/lib/udev/rules.d/70-jabra.rules"
-install -Dm644 packaging/jabra-media-daemon.service \
-    "$ROOT/usr/lib/systemd/user/jabra-media-daemon.service"
-install -Dm644 packaging/jabra-media-daemon.desktop \
-    "$ROOT/etc/xdg/autostart/jabra-media-daemon.desktop"
-install -Dm644 packaging/jabra-media-daemon-menu.desktop \
-    "$ROOT/usr/share/applications/jabra-media-daemon.desktop"
-install -Dm644 README.md "$ROOT/usr/share/doc/jabra-media-daemon/README.md"
+install -Dm755 target/release/jabraw "$ROOT/usr/bin/jabraw"
+install -Dm644 70-jabraw.rules                     "$ROOT/usr/lib/udev/rules.d/70-jabraw.rules"
+install -Dm644 packaging/jabraw.service \
+    "$ROOT/usr/lib/systemd/user/jabraw.service"
+install -Dm644 packaging/jabraw-autostart.desktop \
+    "$ROOT/etc/xdg/autostart/jabraw.desktop"
+install -Dm644 packaging/jabraw.desktop \
+    "$ROOT/usr/share/applications/jabraw.desktop"
+install -Dm644 README.md "$ROOT/usr/share/doc/jabraw/README.md"
 install -Dm755 packaging/postinst "$ROOT/DEBIAN/postinst"
 install -Dm755 packaging/prerm    "$ROOT/DEBIAN/prerm"
 
 INSTALLED_SIZE=$(du -ks "$ROOT" | cut -f1)
 cat > "$ROOT/DEBIAN/control" <<EOF
-Package: jabra-media-daemon
+Package: jabraw
 Version: $VERSION
 Section: sound
 Priority: optional
 Architecture: $ARCH
 Maintainer: Michael Dold <michidold@users.noreply.github.com>
 Depends: libc6, udev
+Conflicts: jabra-media-daemon
+Replaces: jabra-media-daemon
 Recommends: pipewire, wireplumber
 Suggests: gnome-shell-ubuntu-extensions | gnome-shell-extension-appindicator
 Installed-Size: $INSTALLED_SIZE
