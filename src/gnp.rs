@@ -98,12 +98,13 @@ pub fn parse_body(body: &[u8]) -> Option<Response<'_>> {
 
 /// Ladestand in Prozent aus der Antwort auf [`SUB_HS_BATTERY`].
 ///
-/// Byte 1 trägt den Prozentwert, Byte 0 den Ladevorgang. Beides am Gerät
-/// belegt, mit Hin- und Rückweg: `00 20 00 00` bei 32 % ohne Kabel,
-/// `01 3a 00 00` bei 58 % am Kabel, `00 3d 00 00` bei 61 % nach dem Abziehen.
+/// Byte 1 trägt den Prozentwert. Am Gerät belegt, mit Hin- und Rückweg:
+/// `00 20 00 00` bei 32 % ohne Kabel, `01 3a 00 00` bei 58 % am Kabel,
+/// `00 3d 00 00` bei 61 % nach dem Abziehen.
 ///
-/// Byte 2 und 3 waren in allen Messungen 0 und dürften nach dem Vorbild der
-/// SDK-Struktur "fast leer" und die Batteriezelle bezeichnen — unbelegt.
+/// Direkt am Headset ist die Antwort länger: `24 5d 10 64` bei 93 %. Byte 1
+/// bleibt der Prozentwert, Byte 2 und 3 steigen beim Laden (`10 64` auf
+/// `10 da`) und könnten die Zellspannung sein — unbelegt, deshalb ungenutzt.
 pub fn battery_percent(data: &[u8]) -> Option<u8> {
     match data.get(1) {
         Some(&p) if p <= 100 => Some(p),
@@ -111,13 +112,12 @@ pub fn battery_percent(data: &[u8]) -> Option<u8> {
     }
 }
 
-/// Nur für die über den Dongle vermittelte Antwort gültig.
-///
-/// Direkt am Headset abgefragt hat Byte 0 eine andere Bedeutung — beobachtet
-/// wurden `0x24` und `0x15` statt eines Schalters —, dort ist der Ladezustand
-/// bislang nicht identifiziert.
+/// Byte 0 ist ein Bitfeld, Bit 0 der Ladezustand. Auf beiden Wegen geprüft:
+/// über den Dongle wechselt es `0x00`/`0x01`, direkt am Headset `0x24`/`0x25`.
+/// Die übrigen Bits sind unbelegt, deshalb nur Bit 0 auswerten — ein Vergleich
+/// auf ungleich null meldete am Headset dauerhaft "lädt".
 pub fn battery_charging(data: &[u8]) -> bool {
-    data.first().is_some_and(|&b| b != 0)
+    data.first().is_some_and(|&b| b & 1 != 0)
 }
 
 /// Textantworten der ident-Gruppe: führendes Längenbyte, dann ASCII.

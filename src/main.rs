@@ -394,8 +394,8 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
                         bt_path = bt.as_ref().map(|d| d.path.clone());
                     }
                     battery = bt.as_ref().and_then(|d| d.battery);
-                    // Der Ladezustand ist über RFCOMM noch nicht identifiziert
-                    // und über HFP gar nicht vorhanden.
+                    // HFP kennt keinen Ladezustand; über RFCOMM kommt er weiter
+                    // unten aus der GNP-Antwort.
                     charging = false;
                     info = match &bt {
                         Some(d) => DeviceInfo {
@@ -438,8 +438,11 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
                             if let Some(v) = ser.as_deref().and_then(gnp::text) {
                                 info.headset_serial = Some(v);
                             }
-                            if let Some(p) = bat.as_deref().and_then(gnp::battery_percent) {
-                                battery = Some(p);
+                            if let Some(d) = bat.as_deref() {
+                                if let Some(p) = gnp::battery_percent(d) {
+                                    battery = Some(p);
+                                }
+                                charging = gnp::battery_charging(d);
                             }
                             // Bleibt alles stumm, ist die Verbindung tot.
                             session = any.then_some(s);
