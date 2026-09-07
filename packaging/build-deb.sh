@@ -20,6 +20,8 @@ install -Dm644 packaging/jabraw-autostart.desktop \
     "$ROOT/etc/xdg/autostart/jabraw.desktop"
 install -Dm644 packaging/jabraw.desktop \
     "$ROOT/usr/share/applications/jabraw.desktop"
+install -Dm644 packaging/50-jabraw-no-suspend.conf \
+    "$ROOT/usr/share/wireplumber/wireplumber.conf.d/50-jabraw-no-suspend.conf"
 install -Dm644 README.md "$ROOT/usr/share/doc/jabraw/README.md"
 install -Dm755 packaging/postinst "$ROOT/DEBIAN/postinst"
 install -Dm755 packaging/prerm    "$ROOT/DEBIAN/prerm"

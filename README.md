@@ -60,6 +60,14 @@ einstellungen wie Sidetone oder Busylight.
 erzeugen die Usages `0xb5`/`0xb6`. Im Tray-Menü sind Vor/Zurück vorhanden, an
 der Hardware nicht.
 
+**Aufwachlatenz nach Pause.** WirePlumber suspendiert untätige Knoten
+(`suspend-node.lua`); der Dongle baut den USB-Audiostream dann ab, und beim
+nächsten Play dauert es spürbar, bis wieder etwas hörbar ist — es wirkt, als
+hätte der Tastendruck nichts bewirkt. Das Paket legt deshalb
+`/usr/share/wireplumber/wireplumber.conf.d/50-jabraw-no-suspend.conf` ab, das
+`session.suspend-timeout-seconds = 0` für Jabra-USB-Audiogeräte setzt. Nach der
+Installation einmal `systemctl --user restart wireplumber`.
+
 **Mikroarm.** Der Arm meldet sich auf `hidraw` nicht. Report 2 Bit 2 (`Line`)
 sieht auf den ersten Blick danach aus, wechselt aber im Gleichtakt mit dem
 Wiedergabezustand und ist damit die Stream-Statusmeldung des Dongles. Die
