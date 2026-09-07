@@ -1,4 +1,5 @@
 mod audio;
+mod bluetooth;
 mod gnp;
 mod hid;
 mod mpris;
@@ -39,6 +40,8 @@ const REFRESH_INTERVAL: Duration = Duration::from_secs(2);
 const BATTERY_EVERY_N_TICKS: u32 = 15;
 /// Ausgabegeräte alle 20 s neu einlesen; zusätzlich beim Öffnen des Menüs.
 const SINKS_EVERY_N_TICKS: u32 = 10;
+/// BlueZ alle 10 s befragen; der Akkustand über HFP ändert sich nur grob.
+const BLUETOOTH_EVERY_N_TICKS: u32 = 5;
 
 /// Kurzer Statusbericht als Desktop-Benachrichtigung.
 async fn notify_status(conn: &zbus::Connection) {
@@ -118,10 +121,16 @@ async fn show_device_info(info: &DeviceInfo, battery: Option<u8>) {
     if let Some(p) = battery {
         text.push_str(&format!("  Akku: {p} %\n"));
     }
-    text.push_str("\nDongle\n");
-    text.push_str(&line("  Modell", &info.dongle_name));
-    text.push_str(&line("  Firmware", &info.dongle_version));
-    text.push_str(&line("  Seriennummer", &info.dongle_serial));
+    // Ohne Dongle bleibt der Abschnitt leer; über Bluetooth kennt BlueZ nur
+    // Name und Akkustand.
+    if info.dongle_name.is_some() || info.dongle_version.is_some() {
+        text.push_str("\nDongle\n");
+        text.push_str(&line("  Modell", &info.dongle_name));
+        text.push_str(&line("  Firmware", &info.dongle_version));
+        text.push_str(&line("  Seriennummer", &info.dongle_serial));
+    } else {
+        text.push_str("\nÜber Bluetooth verbunden — Firmware und Seriennummer\n                       liefert nur der USB-Dongle.\n");
+    }
 
     let attempts: [(&str, Vec<String>); 2] = [
         (
@@ -161,6 +170,11 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
     let started = std::time::Instant::now();
     let no_tray = std::env::args().any(|a| a == "--no-tray");
     let conn = zbus::Connection::session().await?;
+    // BlueZ hängt am System-Bus. Fehlt er, bleibt nur der USB-Pfad.
+    let system = zbus::Connection::system().await.ok();
+    if system.is_none() {
+        eprintln!("kein System-Bus erreichbar — Bluetooth-Geräte bleiben unsichtbar");
+    }
 
     // Einzelinstanz-Sperre. Zwei Daemons lesen beide hidraw und schicken jeden
     // Tastendruck doppelt an MPRIS — Play unmittelbar gefolgt von Pause, also
@@ -195,6 +209,7 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
     let mut battery: Option<u8> = None;
     let mut info = DeviceInfo::default();
     let mut sinks: Vec<audio::Sink> = Vec::new();
+    let mut bt: Option<bluetooth::BtDevice> = None;
     let mut seq: u8 = 0;
     // Ordnet Antworten den eigenen Anfragen zu; das Gerät sendet auf diesem
     // Kanal auch unaufgefordert.
@@ -237,6 +252,8 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
             _ = ticker.tick() => {
                 for (path, name, file) in hid::scan(&watched, &mut warned) {
                     println!("überwache {path} ({name})");
+                    bt = None;
+                    info = DeviceInfo::default();
                     if let Ok(mut w) = file.try_clone() {
                         // Gerätedaten ändern sich nicht; einmal beim Anstecken.
                         for (dst, sub) in [
@@ -275,9 +292,34 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                     pending.insert(seq, Pending::Battery);
                 }
+
+                // Ohne Dongle gibt es keinen GNP-Kanal. Was BlueZ über ein
+                // direkt gekoppeltes Headset weiß, ist dann alles, was bleibt:
+                // Name und Akkustand. Die Tasten laufen in dem Betrieb über
+                // AVRCP und werden vom Desktop schon an MPRIS gereicht.
+                if watched.is_empty() {
+                    if ticks.is_multiple_of(BLUETOOTH_EVERY_N_TICKS) {
+                        bt = match &system {
+                            Some(c) => bluetooth::connected_jabra(c).await,
+                            None => None,
+                        };
+                    }
+                    battery = bt.as_ref().and_then(|d| d.battery);
+                    info = match &bt {
+                        Some(d) => DeviceInfo {
+                            headset_name: Some(d.name.clone()),
+                            ..DeviceInfo::default()
+                        },
+                        None => DeviceInfo::default(),
+                    };
+                }
                 ticks = ticks.wrapping_add(1);
                 if let Some(handle) = &tray {
-                    let device = names.values().next().cloned();
+                    let device = names
+                        .values()
+                        .next()
+                        .cloned()
+                        .or_else(|| bt.as_ref().map(|d| d.name.clone()));
                     let info_snapshot = info.clone();
                     if ticks.is_multiple_of(SINKS_EVERY_N_TICKS) || sinks.is_empty() {
                         sinks = audio::list_sinks().await;

@@ -39,6 +39,16 @@ jabraw --debug      # print every raw report and the bits that changed
 jabraw --no-tray    # keys only, no tray icon
 ```
 
+## Without the dongle
+
+Paired straight over Bluetooth, the headset has no HID device, so none of
+the above applies. Nothing needs doing: the buttons travel over AVRCP and the
+desktop forwards them to MPRIS, and BlueZ reports the battery over HFP.
+Jabraw picks the headset up through BlueZ so it still shows in the tray with
+its name and battery, and falls back to the USB path the moment a dongle
+appears. Devices are matched by vendor id, USB `0b0e` and Bluetooth `0067`,
+not by model.
+
 ## Battery level
 
 The device exposes no HID battery usage page, so `upower` does not see it.
