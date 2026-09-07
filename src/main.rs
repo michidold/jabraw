@@ -15,6 +15,24 @@ use std::io::Write;
 use hid::{Action, Msg};
 use tray::{Cmd, HeadsetTray};
 
+/// Was über Dongle und Headset bekannt ist. Beide hängen am selben
+/// hidraw-Knoten und werden über die GNP-Zieladresse auseinandergehalten.
+#[derive(Default, Clone, PartialEq)]
+pub struct DeviceInfo {
+    pub dongle_name: Option<String>,
+    pub dongle_version: Option<String>,
+    pub dongle_serial: Option<String>,
+    pub headset_name: Option<String>,
+    pub headset_version: Option<String>,
+    pub headset_serial: Option<String>,
+}
+
+/// Offene GNP-Anfrage, über die Sequenznummer der Antwort zugeordnet.
+enum Pending {
+    Battery,
+    Ident { dst: u8, sub: u8 },
+}
+
 /// Takt für Geräte-Rescan und Auffrischen der Tray-Anzeige.
 const REFRESH_INTERVAL: Duration = Duration::from_secs(2);
 /// Akkuabfrage alle 30 s, also jeden 15. Durchlauf.
@@ -47,7 +65,15 @@ async fn notify_status(conn: &zbus::Connection) {
         });
     }
 
-    let proxy = match zbus::proxy::Builder::<zbus::Proxy>::new(conn)
+    notify(&body.join("\n")).await;
+}
+
+/// Desktop-Benachrichtigung, auch als Rückfall für den Infodialog.
+async fn notify(body: &str) {
+    let Ok(conn) = zbus::Connection::session().await else {
+        return;
+    };
+    let proxy = match zbus::proxy::Builder::<zbus::Proxy>::new(&conn)
         .destination("org.freedesktop.Notifications")
         .and_then(|b| b.path("/org/freedesktop/Notifications"))
         .and_then(|b| b.interface("org.freedesktop.Notifications"))
@@ -66,13 +92,58 @@ async fn notify_status(conn: &zbus::Connection) {
                 0u32,
                 "audio-headset",
                 "Jabraw",
-                body.join("\n"),
+                body,
                 Vec::<String>::new(),
                 std::collections::HashMap::<String, zbus::zvariant::Value>::new(),
                 5000i32,
             ),
         )
         .await;
+}
+
+/// Kleiner Infodialog. Der Daemon bringt keine GUI mit, deshalb über das
+/// Dialogwerkzeug des Desktops; ohne eines davon bleibt die Benachrichtigung.
+async fn show_device_info(info: &DeviceInfo, battery: Option<u8>) {
+    let line = |label: &str, v: &Option<String>| match v {
+        Some(v) => format!("{label}: {v}\n"),
+        None => String::new(),
+    };
+    let mut text = String::new();
+    text.push_str("Headset\n");
+    text.push_str(&line("  Modell", &info.headset_name));
+    text.push_str(&line("  Firmware", &info.headset_version));
+    text.push_str(&line("  Seriennummer", &info.headset_serial));
+    if let Some(p) = battery {
+        text.push_str(&format!("  Akku: {p} %\n"));
+    }
+    text.push_str("\nDongle\n");
+    text.push_str(&line("  Modell", &info.dongle_name));
+    text.push_str(&line("  Firmware", &info.dongle_version));
+    text.push_str(&line("  Seriennummer", &info.dongle_serial));
+
+    let attempts: [(&str, Vec<String>); 2] = [
+        (
+            "zenity",
+            vec![
+                "--info".into(),
+                "--title=Jabraw".into(),
+                "--no-wrap".into(),
+                format!("--text={text}"),
+            ],
+        ),
+        (
+            "kdialog",
+            vec!["--title".into(), "Jabraw".into(), "--msgbox".into(), text.clone()],
+        ),
+    ];
+    for (bin, args) in attempts {
+        match tokio::process::Command::new(bin).args(&args).status().await {
+            Ok(_) => return,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(e) => eprintln!("{bin} nicht startbar: {e}"),
+        }
+    }
+    notify(&text.replace('\n', " · ")).await;
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -120,10 +191,11 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
     // Schreibende Kopien der Geraete-Handles fuer GNP-Anfragen.
     let mut writers: HashMap<String, std::fs::File> = HashMap::new();
     let mut battery: Option<u8> = None;
+    let mut info = DeviceInfo::default();
     let mut seq: u8 = 0;
-    // Ordnet die Antwort der eigenen Anfrage zu; das Geraet sendet auf diesem
+    // Ordnet Antworten den eigenen Anfragen zu; das Gerät sendet auf diesem
     // Kanal auch unaufgefordert.
-    let mut pending_battery_seq: Option<u8> = None;
+    let mut pending: HashMap<u8, Pending> = HashMap::new();
     let mut ticks: u32 = 0;
 
     let mut watched: HashSet<String> = HashSet::new();
@@ -140,6 +212,7 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
             audio: audio::AudioState::default(),
             player: None,
             battery: None,
+            info: DeviceInfo::default(),
             tx: cmd_tx.clone(),
         })
         .spawn()
@@ -161,7 +234,22 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
             _ = ticker.tick() => {
                 for (path, name, file) in hid::scan(&watched, &mut warned) {
                     println!("überwache {path} ({name})");
-                    if let Ok(w) = file.try_clone() {
+                    if let Ok(mut w) = file.try_clone() {
+                        // Gerätedaten ändern sich nicht; einmal beim Anstecken.
+                        for (dst, sub) in [
+                            (gnp::DST_DONGLE, gnp::SUB_NAME),
+                            (gnp::DST_DONGLE, gnp::SUB_VERSION),
+                            (gnp::DST_DONGLE, gnp::SUB_SERIAL),
+                            (gnp::DST_HEADSET, gnp::SUB_NAME),
+                            (gnp::DST_HEADSET, gnp::SUB_VERSION),
+                            (gnp::DST_HEADSET, gnp::SUB_SERIAL),
+                        ] {
+                            seq = seq.wrapping_add(1);
+                            let req = gnp::read_request(dst, seq, gnp::CMD_IDENT, sub);
+                            if w.write_all(&req).is_ok() {
+                                pending.insert(seq, Pending::Ident { dst, sub });
+                            }
+                        }
                         writers.insert(path.clone(), w);
                     }
                     watched.insert(path.clone());
@@ -173,15 +261,21 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
                 // aendert sich in Prozentschritten.
                 if ticks.is_multiple_of(BATTERY_EVERY_N_TICKS) {
                     seq = seq.wrapping_add(1);
-                    let req = gnp::read_request(seq, gnp::CMD_STATUS, gnp::SUB_HS_BATTERY);
+                    let req = gnp::read_request(
+                        gnp::DST_DONGLE,
+                        seq,
+                        gnp::CMD_STATUS,
+                        gnp::SUB_HS_BATTERY,
+                    );
                     for w in writers.values_mut() {
                         let _ = w.write_all(&req);
                     }
-                    pending_battery_seq = Some(seq);
+                    pending.insert(seq, Pending::Battery);
                 }
                 ticks = ticks.wrapping_add(1);
                 if let Some(handle) = &tray {
                     let device = names.values().next().cloned();
+                    let info_snapshot = info.clone();
                     let audio_state = audio::read_state().await;
                     let player = mpris::active_player(&conn).await;
                     handle.update(move |t: &mut HeadsetTray| {
@@ -189,6 +283,7 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
                         t.audio = audio_state;
                         t.player = player;
                         t.battery = battery;
+                        t.info = info_snapshot;
                     }).await;
                 }
             }
@@ -201,6 +296,7 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
                 Cmd::ToggleSourceMute => audio::toggle_mute(Target::Source).await,
                 Cmd::Volume(delta) => audio::change_volume(Target::Sink, delta).await,
                 Cmd::SetSink(id) => audio::set_default_sink(id).await,
+                Cmd::ShowInfo => show_device_info(&info, battery).await,
                 Cmd::Quit => {
                     if let Some(handle) = &tray {
                         handle.shutdown().await;
@@ -214,6 +310,7 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
                     println!("{path} nicht mehr verfügbar");
                     writers.remove(&path);
                     battery = None;
+                    info = DeviceInfo::default();
                     watched.remove(&path);
                     names.remove(&path);
                     state.retain(|(p, _), _| *p != path);
@@ -225,20 +322,46 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
                     let report = data[0];
                     if report == gnp::REPORT_ID {
                         if let Some(r) = gnp::parse(&data) {
-                            if r.cmd == gnp::CMD_STATUS
-                                && r.sub == gnp::SUB_HS_BATTERY
-                                && pending_battery_seq == Some(r.seq)
-                            {
-                                pending_battery_seq = None;
-                                battery = gnp::battery_percent(r.data);
-                                if debug {
-                                    println!(
-                                        "  Akku: {:?} % laedt={}",
-                                        battery,
-                                        gnp::battery_charging(r.data)
-                                    );
+                            match pending.remove(&r.seq) {
+                                Some(Pending::Battery)
+                                    if r.cmd == gnp::CMD_STATUS
+                                        && r.sub == gnp::SUB_HS_BATTERY =>
+                                {
+                                    battery = gnp::battery_percent(r.data);
+                                    if debug {
+                                        println!(
+                                            "  Akku: {battery:?} % lädt={}",
+                                            gnp::battery_charging(r.data)
+                                        );
+                                    }
                                 }
+                                Some(Pending::Ident { dst, sub })
+                                    if r.cmd == gnp::CMD_IDENT
+                                        && r.sub == sub
+                                        && r.src == dst =>
+                                {
+                                    if let Some(t) = gnp::text(r.data) {
+                                        let field = match (dst, sub) {
+                                            (gnp::DST_DONGLE, gnp::SUB_NAME) => &mut info.dongle_name,
+                                            (gnp::DST_DONGLE, gnp::SUB_VERSION) => &mut info.dongle_version,
+                                            (gnp::DST_DONGLE, gnp::SUB_SERIAL) => &mut info.dongle_serial,
+                                            (_, gnp::SUB_NAME) => &mut info.headset_name,
+                                            (_, gnp::SUB_VERSION) => &mut info.headset_version,
+                                            (_, _) => &mut info.headset_serial,
+                                        };
+                                        if debug {
+                                            println!("  ident dst={dst:#04x} sub={sub}: {t}");
+                                        }
+                                        *field = Some(t);
+                                    }
+                                }
+                                _ => {}
                             }
+                        }
+                        // Unbeantwortetes sammelt sich sonst bis zum Überlauf
+                        // der Sequenznummer an.
+                        if pending.len() > 64 {
+                            pending.clear();
                         }
                         continue;
                     }

@@ -25,7 +25,9 @@ The volume rocker keeps working as before, through the desktop.
 
 The tray icon has the rest: headset battery level, current player and
 track, next and previous, volume and mute for both speaker and
-microphone, and output device selection.
+microphone, and output device selection. "Geräteinformationen" opens a
+dialog with model, firmware and serial number of both the headset and
+the dongle.
 
 Skipping tracks from the headset itself is not possible — it never sends
 those HID usages.
@@ -53,7 +55,11 @@ byte 6+  payload
 ```
 
 A read of status/2 answers with four payload bytes whose second byte is the
-percentage. The packet layout was taken from the traffic Jabra's own SDK
+percentage.
+
+Byte 0 addresses the target, which is how headset and dongle are told apart
+on the one hidraw node: `0x01` is the dongle, `0x04` the headset. Both answer
+the ident group, so each reports its own name, firmware version and serial. The packet layout was taken from the traffic Jabra's own SDK
 produces, so jabraw sends nothing the vendor tool does not send itself. No
 proprietary library is involved at runtime.
 

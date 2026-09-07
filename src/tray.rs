@@ -8,6 +8,7 @@ use tokio::sync::mpsc::UnboundedSender;
 
 use crate::audio::{AudioState, Sink};
 use crate::mpris::PlayerInfo;
+use crate::DeviceInfo;
 
 /// Vom Menü ausgelöste Wünsche. Die Callbacks laufen im Tray-Task und dürfen
 /// nicht blockieren, deshalb wird die eigentliche Arbeit an die Hauptschleife
@@ -19,6 +20,7 @@ pub enum Cmd {
     ToggleSinkMute,
     ToggleSourceMute,
     Volume(i32),
+    ShowInfo,
     SetSink(u32),
     Quit,
 }
@@ -28,6 +30,7 @@ pub struct HeadsetTray {
     pub audio: AudioState,
     pub player: Option<PlayerInfo>,
     pub battery: Option<u8>,
+    pub info: DeviceInfo,
     pub tx: UnboundedSender<Cmd>,
 }
 
@@ -203,6 +206,17 @@ impl ksni::Tray for HeadsetTray {
                         .collect(),
                 }
                 .into()],
+                ..Default::default()
+            }
+            .into(),
+        );
+        items.push(MenuItem::Separator);
+
+        items.push(
+            StandardItem {
+                label: "Geräteinformationen …".into(),
+                enabled: self.device.is_some(),
+                activate: Box::new(|this: &mut Self| this.send(Cmd::ShowInfo)),
                 ..Default::default()
             }
             .into(),

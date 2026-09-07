@@ -22,7 +22,10 @@ pub const REPORT_ID: u8 = 0x05;
 const REPORT_SIZE: usize = 63;
 const HEADER_LEN: usize = 6;
 
-const DST_DEVICE: u8 = 0x01;
+/// Zieladressen. Dongle und Headset hängen am selben hidraw-Knoten und werden
+/// über dieses Byte auseinandergehalten.
+pub const DST_DONGLE: u8 = 0x01;
+pub const DST_HEADSET: u8 = 0x04;
 const SRC_PC: u8 = 0x00;
 const TYPE_READ: u8 = 1;
 const TYPE_RESPONSE: u8 = 3;
@@ -30,12 +33,17 @@ const TYPE_RESPONSE: u8 = 3;
 pub const CMD_STATUS: u8 = 18;
 pub const SUB_HS_BATTERY: u8 = 2;
 
+pub const CMD_IDENT: u8 = 2;
+pub const SUB_NAME: u8 = 0;
+pub const SUB_SERIAL: u8 = 1;
+pub const SUB_VERSION: u8 = 3;
+
 /// Lese-Anfrage, fertig zum Schreiben auf den hidraw-Knoten (führendes Byte ist
 /// die Report-ID).
-pub fn read_request(seq: u8, cmd: u8, sub: u8) -> [u8; 1 + REPORT_SIZE] {
+pub fn read_request(dst: u8, seq: u8, cmd: u8, sub: u8) -> [u8; 1 + REPORT_SIZE] {
     let mut out = [0u8; 1 + REPORT_SIZE];
     out[0] = REPORT_ID;
-    out[1] = DST_DEVICE;
+    out[1] = dst;
     out[2] = SRC_PC;
     out[3] = seq;
     out[4] = (TYPE_READ << 6) | HEADER_LEN as u8;
@@ -45,6 +53,8 @@ pub fn read_request(seq: u8, cmd: u8, sub: u8) -> [u8; 1 + REPORT_SIZE] {
 }
 
 pub struct Response<'a> {
+    /// Absender: verrät, ob Dongle oder Headset geantwortet hat.
+    pub src: u8,
     pub seq: u8,
     pub cmd: u8,
     pub sub: u8,
@@ -62,6 +72,7 @@ pub fn parse(report: &[u8]) -> Option<Response<'_>> {
         return None;
     }
     Some(Response {
+        src: body[1],
         seq: body[2],
         cmd: body[4],
         sub: body[5],
@@ -83,4 +94,14 @@ pub fn battery_percent(data: &[u8]) -> Option<u8> {
 
 pub fn battery_charging(data: &[u8]) -> bool {
     data.get(2).is_some_and(|&b| b != 0)
+}
+
+/// Textantworten der ident-Gruppe: führendes Längenbyte, dann ASCII.
+pub fn text(data: &[u8]) -> Option<String> {
+    let (&len, rest) = data.split_first()?;
+    let rest = rest.get(..len as usize)?;
+    if rest.is_empty() || !rest.iter().all(|&b| (0x20..0x7f).contains(&b)) {
+        return None;
+    }
+    Some(rest.iter().map(|&b| b as char).collect())
 }
