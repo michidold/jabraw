@@ -112,6 +112,10 @@ async fn notify(body: &str) {
         .await;
 }
 
+/// Jahr der ersten Veröffentlichung; ein mitlaufendes Jahr wäre für einen
+/// Urheberrechtsvermerk falsch.
+const COPYRIGHT_YEAR: &str = "2026";
+
 /// Kleiner Infodialog. Der Daemon bringt keine GUI mit, deshalb über das
 /// Dialogwerkzeug des Desktops; ohne eines davon bleibt die Benachrichtigung.
 async fn show_device_info(info: &DeviceInfo, battery: Option<u8>, charging: bool) {
@@ -143,12 +147,26 @@ async fn show_device_info(info: &DeviceInfo, battery: Option<u8>, charging: bool
         text.push_str(&line(&format!("  {}", s.model), &info.dongle_name));
         text.push_str(&line(&format!("  {}", s.firmware), &info.dongle_version));
         text.push_str(&line(&format!("  {}", s.serial), &info.dongle_serial));
-    } else {
+    } else if info.headset_version.is_none() {
+        // Nur wenn gar kein GNP-Kanal steht; mit RFCOMM liefert auch Bluetooth
+        // Firmware, Seriennummer und Ladezustand.
         text.push_str(&format!("\n{}\n", s.bluetooth_note));
     }
     // Eigene Version mit anzeigen: sonst ist von außen nicht erkennbar, welcher
     // Stand tatsächlich läuft, wenn Autostart ein älteres Paket startet.
-    text.push_str(&format!("\nJabraw {}\n", env!("CARGO_PKG_VERSION")));
+    // Urheber und Lizenz kommen aus Cargo.toml, damit beides nicht auseinander
+    // läuft; die Repository-Adresse macht die Lizenzangabe nachschlagbar.
+    let author = env!("CARGO_PKG_AUTHORS")
+        .split('<')
+        .next()
+        .unwrap_or("")
+        .trim();
+    text.push_str(&format!(
+        "\nJabraw {}\n© {COPYRIGHT_YEAR} {author} · {}\n{}\n",
+        env!("CARGO_PKG_VERSION"),
+        env!("CARGO_PKG_LICENSE"),
+        env!("CARGO_PKG_REPOSITORY"),
+    ));
 
     let attempts: [(&str, Vec<String>); 2] = [
         (
