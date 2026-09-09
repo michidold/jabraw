@@ -1,3 +1,17 @@
+jabraw (0.4.3-1) unstable; urgency=medium
+
+  * Stop reading every single byte as a switch. Settings that Jabra's device
+    model files describe as a choice keep their number, rather than being
+    labelled off or on — soundMode 0 is bass, not off. See
+    doc/settings-sources.md for where those files are and what they leave open.
+  * Give the desktop entries an English default with a German translation.
+  * Clean up the icon cache when the package is removed.
+  * Build both packaging paths in CI and compare what they ship, run the
+    autopkgtest against the installed package, and check formatting, lints and
+    tests on every push.
+
+ -- Michael Dold <michidold@users.noreply.github.com>  Wed, 09 Sep 2026 17:07:34 +0200
+
 jabraw (0.4.2-1) unstable; urgency=medium
 
   * Keep an RFCOMM session when the headset does not know a subcommand; only a
