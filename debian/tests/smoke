@@ -1,0 +1,19 @@
+#!/bin/sh
+# Prueft das installierte Paket: der Daemon laeuft an, und eine zweite
+# Instanz erkennt ihn am D-Bus-Namen und endet mit 0, statt die Tasten ein
+# zweites Mal zu verarbeiten.
+set -e
+
+jabraw --version
+
+dbus-run-session -- sh -c '
+    set -e
+    jabraw --no-tray &
+    first=$!
+    # Der Name ist beansprucht, sobald der Daemon steht; fuer eine Abfrage
+    # brauchte es einen weiteren Bus-Client, deshalb eine grosszuegige Frist.
+    sleep 5
+    kill -0 "$first"
+    timeout 10 jabraw --quiet
+    kill "$first"
+'

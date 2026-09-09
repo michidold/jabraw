@@ -1,0 +1,5 @@
+Tests: smoke
+Depends: @, dbus-daemon
+# Ohne System-Bus meldet der Daemon fehlende Bluetooth-Unterstuetzung auf
+# stderr, was hier erwartet ist.
+Restrictions: allow-stderr
