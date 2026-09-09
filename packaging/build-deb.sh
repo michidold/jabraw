@@ -60,6 +60,7 @@ mkdir -p "$ROOT/DEBIAN"
 echo "/etc/xdg/autostart/jabraw.desktop" > "$ROOT/DEBIAN/conffiles"
 install -Dm755 packaging/postinst "$ROOT/DEBIAN/postinst"
 install -Dm755 packaging/prerm    "$ROOT/DEBIAN/prerm"
+install -Dm755 packaging/postrm   "$ROOT/DEBIAN/postrm"
 
 # Bibliotheksabhängigkeiten von dpkg-shlibdeps statt von Hand: libgcc-s1 fehlte
 # in der gepflegten Liste, und libc6 ohne Untergrenze lässt sich auf einem zu
