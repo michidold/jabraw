@@ -4,7 +4,7 @@
 //! (with the AppIndicator extension), KDE and the tray-capable wlroots
 //! panels.
 
-use tokio::sync::mpsc::UnboundedSender;
+use tokio::sync::mpsc::Sender;
 
 use crate::audio::{AudioState, Sink};
 use crate::mpris::PlayerInfo;
@@ -37,13 +37,14 @@ pub struct HeadsetTray {
     pub info: DeviceInfo,
     /// Whether a GNP channel exists, over the dongle or over Bluetooth.
     pub has_gnp: bool,
-    pub tx: UnboundedSender<Cmd>,
+    pub tx: Sender<Cmd>,
 }
 
 impl HeadsetTray {
     fn send(&self, cmd: Cmd) {
-        // Fails only once the main loop has ended.
-        let _ = self.tx.send(cmd);
+        // Fails once the main loop has ended, and on a full queue — which
+        // takes more menu clicks than a hand manages while one is pending.
+        let _ = self.tx.try_send(cmd);
     }
 }
 

@@ -50,6 +50,12 @@ const SINKS_EVERY_N_TICKS: u32 = 10;
 /// Ask BlueZ every 10 s; the HFP charge level only moves in coarse steps.
 const BLUETOOTH_EVERY_N_TICKS: u32 = 5;
 
+/// Queue depth of the two channels. Bounded on purpose: the reader thread
+/// blocks on a full queue and the kernel drops what it cannot hand over, so a
+/// device firing reports faster than they are handled cannot grow the process.
+const HID_QUEUE: usize = 256;
+const CMD_QUEUE: usize = 32;
+
 /// A short status report as a desktop notification.
 async fn notify_status(conn: &zbus::Connection) {
     let device = hid::present();
@@ -375,8 +381,8 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
         Err(e) => return Err(e.into()),
     }
 
-    let (hid_tx, mut hid_rx) = mpsc::unbounded_channel::<Msg>();
-    let (cmd_tx, mut cmd_rx) = mpsc::unbounded_channel::<Cmd>();
+    let (hid_tx, mut hid_rx) = mpsc::channel::<Msg>(HID_QUEUE);
+    let (cmd_tx, mut cmd_rx) = mpsc::channel::<Cmd>(CMD_QUEUE);
 
     // Writable copies of the device handles, for GNP requests.
     let mut writers: HashMap<String, std::fs::File> = HashMap::new();

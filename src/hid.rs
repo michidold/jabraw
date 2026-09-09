@@ -175,14 +175,19 @@ pub fn scan(
 
 /// hidraw knows no async, so blocking reads run in a thread per device that
 /// ends by itself when the dongle is pulled.
-pub fn spawn_reader(path: String, mut file: std::fs::File, tx: mpsc::UnboundedSender<Msg>) {
+pub fn spawn_reader(path: String, mut file: std::fs::File, tx: mpsc::Sender<Msg>) {
     std::thread::spawn(move || {
         let mut buf = [0u8; 64];
         loop {
             match file.read(&mut buf) {
                 Ok(0) => break,
                 Ok(n) => {
-                    if tx.send(Msg::Report(path.clone(), buf[..n].to_vec())).is_err() {
+                    // Blocking on a full queue is the point: hidraw then drops
+                    // what it cannot hand over instead of the process growing.
+                    if tx
+                        .blocking_send(Msg::Report(path.clone(), buf[..n].to_vec()))
+                        .is_err()
+                    {
                         return;
                     }
                 }
@@ -193,6 +198,6 @@ pub fn spawn_reader(path: String, mut file: std::fs::File, tx: mpsc::UnboundedSe
                 }
             }
         }
-        let _ = tx.send(Msg::Closed(path));
+        let _ = tx.blocking_send(Msg::Closed(path));
     });
 }
