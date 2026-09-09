@@ -26,3 +26,38 @@ jobs:
 
       - name: Test
         run: cargo test --locked
+
+  # Der Issue-Punkt "zwei Listen fuer dieselben Dateien": beide Wege bauen, und
+  # was sie ausliefern, muss uebereinstimmen.
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install the packaging tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends debhelper lintian
+
+      # Zuerst, weil sein clean-Ziel cargo clean aufruft und damit target/ raeumt.
+      # -d: die Toolchain kommt vom Runner, nicht aus den Debian-Paketen, die
+      # Build-Depends nennt.
+      - name: Build the source package
+        run: dpkg-buildpackage -b -us -uc -d
+
+      - name: Build the .deb the release ships
+        run: ./packaging/build-deb.sh
+
+      - name: Compare what the two produce
+        run: |
+          list() { dpkg-deb -c "$1" | awk '{print $6}' | grep -v '^./usr/share/doc/' | sort; }
+          list ../jabraw_*_amd64.deb   > /tmp/dh.list
+          list target/deb/jabraw_*.deb > /tmp/script.list
+          # /usr/share/doc bleibt aussen vor: debhelper benennt den Changelog
+          # nach der Versionierung, das Skript liefert zusaetzlich die README.
+          diff -u /tmp/dh.list /tmp/script.list
+
+      - name: Lint both packages
+        run: lintian --fail-on error ../jabraw_*_amd64.deb target/deb/jabraw_*.deb
