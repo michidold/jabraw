@@ -103,23 +103,29 @@ async fn read_target(target: Target) -> (f32, bool) {
         return parse_wpctl_volume(&s);
     }
     // PulseAudio: volume and mute come from separate queries.
-    let muted = output("pactl", &[
-        match target {
-            Target::Sink => "get-sink-mute",
-            Target::Source => "get-source-mute",
-        },
-        target.pactl_id(),
-    ])
+    let muted = output(
+        "pactl",
+        &[
+            match target {
+                Target::Sink => "get-sink-mute",
+                Target::Source => "get-source-mute",
+            },
+            target.pactl_id(),
+        ],
+    )
     .await
     .map(|s| s.contains("yes"))
     .unwrap_or(false);
-    let vol = output("pactl", &[
-        match target {
-            Target::Sink => "get-sink-volume",
-            Target::Source => "get-source-volume",
-        },
-        target.pactl_id(),
-    ])
+    let vol = output(
+        "pactl",
+        &[
+            match target {
+                Target::Sink => "get-sink-volume",
+                Target::Source => "get-source-volume",
+            },
+            target.pactl_id(),
+        ],
+    )
     .await
     .and_then(|s| {
         s.split('%')
@@ -213,7 +219,12 @@ pub async fn change_volume(target: Target, delta: i32) {
         return;
     }
     let pa_step = format!("{}{}%", if delta < 0 { "-" } else { "+" }, delta.abs());
-    if run("pactl", &[target.pactl_volume(), target.pactl_id(), &pa_step]).await {
+    if run(
+        "pactl",
+        &[target.pactl_volume(), target.pactl_id(), &pa_step],
+    )
+    .await
+    {
         return;
     }
     eprintln!("Lautstärke fehlgeschlagen: weder wpctl noch pactl verfügbar");

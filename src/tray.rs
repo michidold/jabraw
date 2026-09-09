@@ -7,8 +7,8 @@
 use tokio::sync::mpsc::Sender;
 
 use crate::audio::{AudioState, Sink};
-use crate::mpris::PlayerInfo;
 use crate::i18n::strings;
+use crate::mpris::PlayerInfo;
 use crate::DeviceInfo;
 
 /// Requests raised from the menu. The callbacks run in the tray task and must

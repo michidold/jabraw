@@ -154,7 +154,11 @@ pub fn scan(
         }
         // Writable, because the vendor channel takes requests; the udev ACL
         // grants rw anyway.
-        match std::fs::OpenOptions::new().read(true).write(true).open(&dev_path) {
+        match std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(&dev_path)
+        {
             Ok(f) => {
                 warned.remove(&dev_path);
                 let name = device_name(&node).unwrap_or_else(|| "Jabra".into());
@@ -201,7 +205,6 @@ pub fn spawn_reader(path: String, mut file: std::fs::File, tx: mpsc::Sender<Msg>
         let _ = tx.blocking_send(Msg::Closed(path));
     });
 }
-
 
 #[cfg(test)]
 mod tests {

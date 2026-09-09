@@ -23,10 +23,7 @@ pub struct BtDevice {
 
 type Managed = HashMap<OwnedObjectPath, HashMap<String, HashMap<String, OwnedValue>>>;
 
-fn field<T: TryFrom<OwnedValue>>(
-    props: &HashMap<String, OwnedValue>,
-    key: &str,
-) -> Option<T> {
+fn field<T: TryFrom<OwnedValue>>(props: &HashMap<String, OwnedValue>, key: &str) -> Option<T> {
     T::try_from(props.get(key)?.try_clone().ok()?).ok()
 }
 
@@ -62,9 +59,7 @@ pub async fn connected_jabra(conn: &zbus::Connection) -> Option<BtDevice> {
         if field::<bool>(dev, "Paired") != Some(true) {
             continue;
         }
-        if !field::<String>(dev, "Modalias")
-            .is_some_and(|m| m.starts_with(JABRA_VENDOR_PREFIX))
-        {
+        if !field::<String>(dev, "Modalias").is_some_and(|m| m.starts_with(JABRA_VENDOR_PREFIX)) {
             continue;
         }
         return Some(BtDevice {

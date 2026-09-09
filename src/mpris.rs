@@ -21,10 +21,7 @@ pub struct PlayerInfo {
     pub track: Option<String>,
 }
 
-async fn player_proxy<'a>(
-    conn: &zbus::Connection,
-    dest: &str,
-) -> Option<zbus::Proxy<'a>> {
+async fn player_proxy<'a>(conn: &zbus::Connection, dest: &str) -> Option<zbus::Proxy<'a>> {
     zbus::proxy::Builder::new(conn)
         .destination(dest.to_string())
         .ok()?
@@ -70,7 +67,9 @@ pub async fn list_players(conn: &zbus::Connection) -> Vec<String> {
 async fn info(conn: &zbus::Connection, dest: &str) -> PlayerInfo {
     let mut out = PlayerInfo {
         bus: dest.to_string(),
-        identity: dest.trim_start_matches("org.mpris.MediaPlayer2.").to_string(),
+        identity: dest
+            .trim_start_matches("org.mpris.MediaPlayer2.")
+            .to_string(),
         ..Default::default()
     };
     // get_property statt eines rohen Properties.Get-Aufrufs: nur so wird die

@@ -18,9 +18,9 @@ use ksni::TrayMethods;
 use tokio::sync::mpsc;
 
 use audio::Target;
+use hid::{Action, Msg};
 use i18n::strings;
 use std::io::Write;
-use hid::{Action, Msg};
 use tray::{Cmd, HeadsetTray};
 
 /// What is known about dongle and headset. Both sit behind the same hidraw
@@ -108,8 +108,16 @@ async fn notify_status(conn: &zbus::Connection) {
         Some(d) => format!("{d}: {}", s.connected),
         None => s.none_found.to_string(),
     }];
-    body.push(format!("{}: {}", s.speaker, level(state.sink_volume, state.sink_muted)));
-    body.push(format!("{}: {}", s.microphone, level(state.source_volume, state.source_muted)));
+    body.push(format!(
+        "{}: {}",
+        s.speaker,
+        level(state.sink_volume, state.sink_muted)
+    ));
+    body.push(format!(
+        "{}: {}",
+        s.microphone,
+        level(state.source_volume, state.source_muted)
+    ));
     if let Some(p) = player {
         body.push(match p.track {
             Some(t) => format!("{}: {t}", p.identity),
@@ -126,7 +134,9 @@ async fn notify_status(conn: &zbus::Connection) {
 /// subset of HTML, so a device that calls itself `<b>` would otherwise style
 /// what it is displayed in.
 fn escape_markup(s: &str) -> String {
-    s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;")
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
 }
 
 /// Desktop notification, also the fallback for the dialogs.
@@ -233,7 +243,12 @@ async fn show_device_info(info: &DeviceInfo, battery: Option<u8>, charging: bool
         ),
         (
             "kdialog",
-            vec!["--title".into(), "Jabraw".into(), "--msgbox".into(), markup.clone()],
+            vec![
+                "--title".into(),
+                "Jabraw".into(),
+                "--msgbox".into(),
+                markup.clone(),
+            ],
         ),
     ];
     for (bin, args) in attempts {
@@ -338,7 +353,11 @@ async fn show_settings(settings: Vec<config::Setting>) {
         args.push(item.name.to_string());
         args.push(format_value(&item.value));
     }
-    match tokio::process::Command::new("zenity").args(&args).status().await {
+    match tokio::process::Command::new("zenity")
+        .args(&args)
+        .status()
+        .await
+    {
         Ok(_) => {}
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
             let text: Vec<String> = settings
@@ -862,7 +881,6 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 }
-
 
 #[cfg(test)]
 mod tests {

@@ -130,7 +130,6 @@ pub fn text(data: &[u8]) -> Option<String> {
     Some(rest.iter().map(|&b| b as char).collect())
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -141,6 +140,9 @@ mod tests {
         assert!(parse_body(&req).is_none());
     }
 
+    // The packet headers read as rows; rustfmt would put every byte on a line
+    // of its own.
+    #[rustfmt::skip]
     #[test]
     fn a_length_past_the_packet_is_rejected() {
         let body = [0, DST_HEADSET, 7, (TYPE_RESPONSE << 6) | 20, CMD_IDENT, SUB_NAME];
@@ -149,13 +151,24 @@ mod tests {
 
     #[test]
     fn the_payload_is_cut_at_the_length_field() {
-        let mut body = vec![0, DST_HEADSET, 7, (TYPE_RESPONSE << 6) | 8, CMD_IDENT, SUB_NAME];
+        let mut body = vec![
+            0,
+            DST_HEADSET,
+            7,
+            (TYPE_RESPONSE << 6) | 8,
+            CMD_IDENT,
+            SUB_NAME,
+        ];
         body.extend_from_slice(&[0xaa, 0xbb, 0xcc]);
         let r = parse_body(&body).unwrap();
-        assert_eq!((r.src, r.seq, r.cmd, r.sub), (DST_HEADSET, 7, CMD_IDENT, SUB_NAME));
+        assert_eq!(
+            (r.src, r.seq, r.cmd, r.sub),
+            (DST_HEADSET, 7, CMD_IDENT, SUB_NAME)
+        );
         assert_eq!(r.data, &[0xaa, 0xbb]);
     }
 
+    #[rustfmt::skip]
     #[test]
     fn over_hidraw_the_report_id_has_to_be_there() {
         let body = [0, DST_HEADSET, 7, (TYPE_RESPONSE << 6) | 6, CMD_IDENT, SUB_NAME];

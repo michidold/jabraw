@@ -85,7 +85,11 @@ impl Session {
     /// One read request and its reply.
     pub fn read(&mut self, dst: u8, cmd: u8, sub: u8) -> Reply {
         let seq = self.next_seq();
-        if self.file.write_all(&gnp::read_body(dst, seq, cmd, sub)).is_err() {
+        if self
+            .file
+            .write_all(&gnp::read_body(dst, seq, cmd, sub))
+            .is_err()
+        {
             self.dead = true;
             return Reply::Dead;
         }

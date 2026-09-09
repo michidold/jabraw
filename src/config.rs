@@ -102,7 +102,10 @@ const COLLECT: Duration = Duration::from_millis(1200);
 /// incoming reports to every open descriptor, so the query leaves the running
 /// key path undisturbed.
 pub fn read_all(path: &str) -> std::io::Result<Vec<Setting>> {
-    let mut file = std::fs::OpenOptions::new().read(true).write(true).open(path)?;
+    let mut file = std::fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(path)?;
     let mut out = Vec::new();
     for (dst, label) in [(gnp::DST_DONGLE, "Dongle"), (gnp::DST_HEADSET, "Headset")] {
         out.extend(sweep(&mut file, dst, label)?);
@@ -110,11 +113,7 @@ pub fn read_all(path: &str) -> std::io::Result<Vec<Setting>> {
     Ok(out)
 }
 
-fn sweep(
-    file: &mut std::fs::File,
-    dst: u8,
-    label: &'static str,
-) -> std::io::Result<Vec<Setting>> {
+fn sweep(file: &mut std::fs::File, dst: u8, label: &'static str) -> std::io::Result<Vec<Setting>> {
     let mut pending = std::collections::HashMap::new();
     for (i, (sub, name)) in SETTINGS.iter().enumerate() {
         // Avoid sequence 0 so it stands apart from an empty report.

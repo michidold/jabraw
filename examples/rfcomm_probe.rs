@@ -52,6 +52,8 @@ fn probe(fd: std::os::fd::OwnedFd) {
     let mut file = std::fs::File::from(fd);
     // Address 0x04 is the headset; 0x01 does not exist without a dongle and
     // answers requests with nack (type 254).
+    // A table of packets; one byte per line would not be one.
+    #[rustfmt::skip]
     let variants: [(&str, Vec<u8>); 6] = [
         ("ident/name", vec![0x04, 0x00, 0x41, 0x46, 0x02, 0x00]),
         ("ident/serial", vec![0x04, 0x00, 0x42, 0x46, 0x02, 0x01]),
@@ -70,8 +72,15 @@ fn probe(fd: std::os::fd::OwnedFd) {
         match read_with_timeout(&file, &mut buf, 1500) {
             Some(n) if n > 0 => {
                 let hex: Vec<String> = buf[..n].iter().map(|b| format!("{b:02x}")).collect();
-                let txt: String = buf[6..n].iter()
-                    .map(|&b| if (0x20..0x7f).contains(&b) { b as char } else { '.' })
+                let txt: String = buf[6..n]
+                    .iter()
+                    .map(|&b| {
+                        if (0x20..0x7f).contains(&b) {
+                            b as char
+                        } else {
+                            '.'
+                        }
+                    })
                     .collect();
                 println!("{:<40} {txt}", hex.join(" "));
             }
@@ -84,7 +93,11 @@ fn probe(fd: std::os::fd::OwnedFd) {
 fn read_with_timeout(file: &std::fs::File, buf: &mut [u8], ms: i32) -> Option<usize> {
     use std::io::Read;
     use std::os::fd::AsRawFd;
-    let mut p = libc::pollfd { fd: file.as_raw_fd(), events: libc::POLLIN, revents: 0 };
+    let mut p = libc::pollfd {
+        fd: file.as_raw_fd(),
+        events: libc::POLLIN,
+        revents: 0,
+    };
     if unsafe { libc::poll(&mut p, 1, ms) } <= 0 {
         return None;
     }
@@ -118,7 +131,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     opts.insert("RequireAuthentication", Value::from(true));
     opts.insert("RequireAuthorization", Value::from(false));
 
-    let pm = zbus::Proxy::new(&conn, "org.bluez", "/org/bluez", "org.bluez.ProfileManager1").await?;
+    let pm = zbus::Proxy::new(
+        &conn,
+        "org.bluez",
+        "/org/bluez",
+        "org.bluez.ProfileManager1",
+    )
+    .await?;
     pm.call::<_, _, ()>(
         "RegisterProfile",
         &(OwnedObjectPath::try_from(PROFILE_PATH)?, SPP_UUID, opts),
@@ -142,6 +161,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             println!("kein NewConnection innerhalb von 12 s");
         }
     }
-    let _ = pm.call::<_, _, ()>("UnregisterProfile", &(OwnedObjectPath::try_from(PROFILE_PATH)?,)).await;
+    let _ = pm
+        .call::<_, _, ()>(
+            "UnregisterProfile",
+            &(OwnedObjectPath::try_from(PROFILE_PATH)?,),
+        )
+        .await;
     Ok(())
 }
