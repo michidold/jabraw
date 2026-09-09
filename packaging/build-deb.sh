@@ -13,6 +13,8 @@ cargo build --release --locked
 
 rm -rf "$ROOT"
 install -Dm755 target/release/jabraw "$ROOT/usr/bin/jabraw"
+# Debug-Symbole gehoeren nicht ins Paket; das Binary bleibt im Baum wie es ist.
+strip --strip-unneeded "$ROOT/usr/bin/jabraw"
 install -Dm644 70-jabraw.rules                     "$ROOT/usr/lib/udev/rules.d/70-jabraw.rules"
 install -Dm644 packaging/jabraw.service \
     "$ROOT/usr/lib/systemd/user/jabraw.service"
@@ -33,6 +35,17 @@ rm -rf "$ICONS"
 install -Dm644 packaging/50-jabraw-no-suspend.conf \
     "$ROOT/usr/share/wireplumber/wireplumber.conf.d/50-jabraw-no-suspend.conf"
 install -Dm644 README.md "$ROOT/usr/share/doc/jabraw/README.md"
+# Handbuchseite, Copyright und Changelog erwartet die Policy im Paket; das
+# Quellpaket bekommt sie ueber debhelper, hier muessen sie von Hand hinein.
+install -Dm644 debian/mans/jabraw.1 "$ROOT/usr/share/man/man1/jabraw.1"
+gzip -9n "$ROOT/usr/share/man/man1/jabraw.1"
+install -Dm644 debian/copyright "$ROOT/usr/share/doc/jabraw/copyright"
+gzip -9nc debian/changelog > "$ROOT/usr/share/doc/jabraw/changelog.gz"
+chmod 644 "$ROOT/usr/share/doc/jabraw/changelog.gz"
+# Ohne diesen Eintrag ueberschreibt dpkg eine geaenderte Autostart-Datei beim
+# Upgrade wortlos, statt zu fragen.
+mkdir -p "$ROOT/DEBIAN"
+echo "/etc/xdg/autostart/jabraw.desktop" > "$ROOT/DEBIAN/conffiles"
 install -Dm755 packaging/postinst "$ROOT/DEBIAN/postinst"
 install -Dm755 packaging/prerm    "$ROOT/DEBIAN/prerm"
 
