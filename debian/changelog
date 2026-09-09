@@ -1,3 +1,10 @@
+jabraw (0.4.4-1) unstable; urgency=medium
+
+  * Show the device settings under a readable name in English and German,
+    sorted by what is on screen, rather than under Jabra's identifiers.
+
+ -- Michael Dold <michidold@users.noreply.github.com>  Wed, 09 Sep 2026 17:26:00 +0200
+
 jabraw (0.4.3-1) unstable; urgency=medium
 
   * Stop reading every single byte as a switch. Settings that Jabra's device
