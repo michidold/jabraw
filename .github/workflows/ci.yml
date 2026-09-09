@@ -58,6 +58,13 @@ jobs:
           # /usr/share/doc bleibt aussen vor: debhelper benennt den Changelog
           # nach der Versionierung, das Skript liefert zusaetzlich die README.
           diff -u /tmp/dh.list /tmp/script.list
+          # Maintainer-Skripte stehen nicht im Dateibaum, driften aber genauso.
+          # md5sums legt nur debhelper an, control unterscheidet sich immer.
+          ctrl() { dpkg-deb --ctrl-tarfile "$1" | tar -t | sed 's|^\./||' \
+              | grep -vE '^(|control|md5sums)$' | sort; }
+          ctrl ../jabraw_*_amd64.deb   > /tmp/dh.ctrl
+          ctrl target/deb/jabraw_*.deb > /tmp/script.ctrl
+          diff -u /tmp/dh.ctrl /tmp/script.ctrl
 
       - name: Lint both packages
         run: lintian --fail-on error ../jabraw_*_amd64.deb target/deb/jabraw_*.deb
