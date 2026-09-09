@@ -5,8 +5,15 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 VERSION=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
+# Nicht-natives Paket: die Revision steht in debian/changelog, und beide Wege
+# muessen dieselbe Version ausliefern.
+DEB_VERSION=$(dpkg-parsechangelog -l debian/changelog -S Version)
+if [ "${DEB_VERSION%-*}" != "$VERSION" ]; then
+    echo "debian/changelog sagt $DEB_VERSION, Cargo.toml sagt $VERSION" >&2
+    exit 1
+fi
 ARCH=$(dpkg --print-architecture)
-PKG="jabraw_${VERSION}_${ARCH}"
+PKG="jabraw_${DEB_VERSION}_${ARCH}"
 ROOT="target/deb/$PKG"
 
 cargo build --release --locked
@@ -42,8 +49,9 @@ install -Dm644 README.md "$ROOT/usr/share/doc/jabraw/README.md"
 install -Dm644 debian/mans/jabraw.1 "$ROOT/usr/share/man/man1/jabraw.1"
 gzip -9n "$ROOT/usr/share/man/man1/jabraw.1"
 install -Dm644 debian/copyright "$ROOT/usr/share/doc/jabraw/copyright"
-gzip -9nc debian/changelog > "$ROOT/usr/share/doc/jabraw/changelog.gz"
-chmod 644 "$ROOT/usr/share/doc/jabraw/changelog.gz"
+# changelog.Debian.gz, nicht changelog.gz: das Paket ist nicht nativ.
+gzip -9nc debian/changelog > "$ROOT/usr/share/doc/jabraw/changelog.Debian.gz"
+chmod 644 "$ROOT/usr/share/doc/jabraw/changelog.Debian.gz"
 install -Dm644 debian/jabraw.lintian-overrides \
     "$ROOT/usr/share/lintian/overrides/jabraw"
 # Ohne diesen Eintrag ueberschreibt dpkg eine geaenderte Autostart-Datei beim
@@ -67,7 +75,7 @@ fi
 INSTALLED_SIZE=$(du -ks "$ROOT" | cut -f1)
 cat > "$ROOT/DEBIAN/control" <<EOF
 Package: jabraw
-Version: $VERSION
+Version: $DEB_VERSION
 Section: sound
 Priority: optional
 Architecture: $ARCH
