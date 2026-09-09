@@ -84,7 +84,13 @@ pub fn device_name(node: &str) -> Option<String> {
     let name = std::fs::read_to_string(format!("/sys/class/hidraw/{node}/device/uevent")).ok()?;
     name.lines()
         .find_map(|l| l.strip_prefix("HID_NAME="))
-        .map(|s| s.trim().to_string())
+        .map(clean)
+}
+
+/// The product string reaches a menu label, a dialog and a notification body,
+/// and the device is free to put control characters in it.
+fn clean(name: &str) -> String {
+    name.trim().chars().filter(|c| !c.is_control()).collect()
 }
 
 /// Device name without opening the node, for status queries that need no read
@@ -101,14 +107,12 @@ pub fn present() -> Option<String> {
             .and_then(|id| id.split(':').nth(1))
             .and_then(|v| u32::from_str_radix(v.trim(), 16).ok());
         if vendor == Some(JABRA_VENDOR) {
-            return Some(
+            return Some(clean(
                 uevent
                     .lines()
                     .find_map(|l| l.strip_prefix("HID_NAME="))
-                    .unwrap_or("Jabra")
-                    .trim()
-                    .to_string(),
-            );
+                    .unwrap_or("Jabra"),
+            ));
         }
     }
     None

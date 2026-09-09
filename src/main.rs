@@ -79,6 +79,15 @@ async fn notify_status(conn: &zbus::Connection) {
     notify(&body.join("\n")).await;
 }
 
+/// Escapes the markup both sinks understand.
+///
+/// zenity parses its text as Pango markup and the notification body allows a
+/// subset of HTML, so a device that calls itself `<b>` would otherwise style
+/// what it is displayed in.
+fn escape_markup(s: &str) -> String {
+    s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;")
+}
+
 /// Desktop notification, also the fallback for the dialogs.
 async fn notify(body: &str) {
     let Ok(conn) = zbus::Connection::session().await else {
@@ -103,7 +112,7 @@ async fn notify(body: &str) {
                 0u32,
                 "audio-headset",
                 "Jabraw",
-                body,
+                escape_markup(body).as_str(),
                 Vec::<String>::new(),
                 std::collections::HashMap::<String, zbus::zvariant::Value>::new(),
                 5000i32,
@@ -168,6 +177,7 @@ async fn show_device_info(info: &DeviceInfo, battery: Option<u8>, charging: bool
         env!("CARGO_PKG_REPOSITORY"),
     ));
 
+    let markup = escape_markup(&text);
     let attempts: [(&str, Vec<String>); 2] = [
         (
             "zenity",
@@ -177,12 +187,12 @@ async fn show_device_info(info: &DeviceInfo, battery: Option<u8>, charging: bool
                 // Same icon as the tray, provided the package is installed.
                 "--icon=jabraw".into(),
                 "--no-wrap".into(),
-                format!("--text={text}"),
+                format!("--text={markup}"),
             ],
         ),
         (
             "kdialog",
-            vec!["--title".into(), "Jabraw".into(), "--msgbox".into(), text.clone()],
+            vec!["--title".into(), "Jabraw".into(), "--msgbox".into(), markup.clone()],
         ),
     ];
     for (bin, args) in attempts {
