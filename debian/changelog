@@ -1,3 +1,10 @@
+jabraw (0.3.5-1) unstable; urgency=medium
+
+  * Start the daemon from udev when a Jabra device appears, rather than at
+    login only.
+
+ -- Michael Dold <michidold@users.noreply.github.com>  Wed, 09 Sep 2026 10:11:44 +0200
+
 jabraw (0.3.4-1) unstable; urgency=medium
 
   * Initial Debian packaging.
