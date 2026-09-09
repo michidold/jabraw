@@ -191,8 +191,21 @@ async fn profile(conn: &zbus::Connection) -> Option<&'static (Arc<Notify>, Slot)
     }
 }
 
+/// How long the whole handshake may take. zbus puts no deadline on a method
+/// call, so an unanswered `ConnectProfile` would wait for as long as BlueZ
+/// takes to give up — the budget below covers every step, not just the wait
+/// for the socket.
+const CONNECT_BUDGET: Duration = Duration::from_secs(12);
+
 /// Opens a session to the given BlueZ device path.
 pub async fn connect(conn: &zbus::Connection, device: &str) -> Option<Session> {
+    tokio::time::timeout(CONNECT_BUDGET, handshake(conn, device))
+        .await
+        .ok()
+        .flatten()
+}
+
+async fn handshake(conn: &zbus::Connection, device: &str) -> Option<Session> {
     let (ready, slot) = profile(conn).await?;
     // A socket left over from an earlier attempt would be handed out as this
     // one, along with any notification nobody collected.

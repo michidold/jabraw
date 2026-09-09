@@ -1,6 +1,17 @@
 //! Auswahl und Steuerung des aktiven MPRIS-Players.
 
+use std::time::Duration;
+
 use zbus::fdo::DBusProxy;
+
+/// Ceiling for every call towards a player. zbus waits for a reply without a
+/// deadline of its own, and a player that hangs would otherwise hang the tick
+/// that asks it what it is playing.
+const CALL_TIMEOUT: Duration = Duration::from_secs(2);
+
+async fn bounded<T, E>(fut: impl std::future::Future<Output = Result<T, E>>) -> Option<T> {
+    tokio::time::timeout(CALL_TIMEOUT, fut).await.ok()?.ok()
+}
 
 #[derive(Debug, Clone, Default)]
 pub struct PlayerInfo {
@@ -43,14 +54,14 @@ pub async fn list_players(conn: &zbus::Connection) -> Vec<String> {
     let Ok(dbus) = DBusProxy::new(conn).await else {
         return vec![];
     };
-    match dbus.list_names().await {
-        Ok(names) => names
+    match bounded(dbus.list_names()).await {
+        Some(names) => names
             .into_iter()
             .filter(|n| n.as_str().starts_with("org.mpris.MediaPlayer2."))
             .map(|n| n.to_string())
             .collect(),
-        Err(e) => {
-            eprintln!("ListNames fehlgeschlagen: {e}");
+        None => {
+            eprintln!("ListNames fehlgeschlagen");
             vec![]
         }
     }
@@ -65,12 +76,15 @@ async fn info(conn: &zbus::Connection, dest: &str) -> PlayerInfo {
     // get_property statt eines rohen Properties.Get-Aufrufs: nur so wird die
     // Variante korrekt ausgepackt.
     if let Some(p) = player_proxy(conn, dest).await {
-        if let Ok(s) = p.get_property::<String>("PlaybackStatus").await {
+        if let Some(s) = bounded(p.get_property::<String>("PlaybackStatus")).await {
             out.status = s;
         }
-        if let Ok(md) = p
-            .get_property::<std::collections::HashMap<String, zbus::zvariant::OwnedValue>>("Metadata")
-            .await
+        if let Some(md) = bounded(
+            p.get_property::<std::collections::HashMap<String, zbus::zvariant::OwnedValue>>(
+                "Metadata",
+            ),
+        )
+        .await
         {
             let field = |k: &str| md.get(k).and_then(|v| String::try_from(v.clone()).ok());
             let title = field("xesam:title");
@@ -86,7 +100,7 @@ async fn info(conn: &zbus::Connection, dest: &str) -> PlayerInfo {
         }
     }
     if let Some(p) = app_proxy(conn, dest).await {
-        if let Ok(id) = p.get_property::<String>("Identity").await {
+        if let Some(id) = bounded(p.get_property::<String>("Identity")).await {
             out.identity = id;
         }
     }
@@ -118,8 +132,8 @@ pub async fn call(conn: &zbus::Connection, dest: &str, method: &str) {
     let Some(proxy) = player_proxy(conn, dest).await else {
         return;
     };
-    if let Err(e) = proxy.call::<_, _, ()>(method, &()).await {
-        eprintln!("MPRIS {method} an {dest} fehlgeschlagen: {e}");
+    if bounded(proxy.call::<_, _, ()>(method, &())).await.is_none() {
+        eprintln!("MPRIS {method} an {dest} fehlgeschlagen");
     }
 }
 

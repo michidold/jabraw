@@ -6,6 +6,7 @@
 //! desktop forwards them to MPRIS already.
 
 use std::collections::HashMap;
+use std::time::Duration;
 
 use zbus::zvariant::{OwnedObjectPath, OwnedValue};
 
@@ -41,7 +42,13 @@ pub async fn connected_jabra(conn: &zbus::Connection) -> Option<BtDevice> {
         .build()
         .await
         .ok()?;
-    let objects: Managed = proxy.call("GetManagedObjects", &()).await.ok()?;
+    // bluetoothd answering slowly must not hold up the tick; zbus itself waits
+    // without a deadline.
+    let objects: Managed =
+        tokio::time::timeout(Duration::from_secs(2), proxy.call("GetManagedObjects", &()))
+            .await
+            .ok()?
+            .ok()?;
 
     for (path, ifaces) in objects {
         let Some(dev) = ifaces.get("org.bluez.Device1") else {
