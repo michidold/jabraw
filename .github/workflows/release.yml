@@ -13,10 +13,15 @@ jobs:
   release:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      # Auf den Commit festgenagelt: ein Tag ist verschiebbar, und diese Action
+      # sieht den Quellbaum vor dem Bauen.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # Vollständige Historie, sonst fehlt der Text des annotierten Tags.
           fetch-depth: 0
+          # Der Workflow schiebt nichts zurück; das Release legt gh mit
+          # GH_TOKEN an. Ein Credential im Checkout wäre nur Angriffsfläche.
+          persist-credentials: false
 
       - name: Check that the tag matches Cargo.toml
         run: |
@@ -28,6 +33,9 @@ jobs:
           fi
           echo "version=$crate" >> "$GITHUB_OUTPUT"
         id: version
+
+      - name: Run the tests
+        run: cargo test --release --locked
 
       - name: Build the package
         run: ./packaging/build-deb.sh
