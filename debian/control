@@ -1,12 +1,11 @@
 Source: jabraw
 Section: sound
-Priority: optional
 Maintainer: Michael Dold <michidold@users.noreply.github.com>
 Build-Depends:
  debhelper-compat (= 13),
  cargo,
  rustc (>= 1.87),
-Standards-Version: 4.7.0
+Standards-Version: 4.7.4
 Homepage: https://github.com/michidold/jabraw
 Vcs-Git: https://github.com/michidold/jabraw.git
 Vcs-Browser: https://github.com/michidold/jabraw
