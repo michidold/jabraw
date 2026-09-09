@@ -39,7 +39,7 @@ jobs:
       - name: Install the packaging tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends debhelper lintian
+          sudo apt-get install -y --no-install-recommends debhelper lintian autopkgtest
 
       # Zuerst, weil sein clean-Ziel cargo clean aufruft und damit target/ raeumt.
       # -d: die Toolchain kommt vom Runner, nicht aus den Debian-Paketen, die
@@ -61,3 +61,9 @@ jobs:
 
       - name: Lint both packages
         run: lintian --fail-on error ../jabraw_*_amd64.deb target/deb/jabraw_*.deb
+
+      # Der Runner ist Wegwerfware, also darf das Paket hier wirklich
+      # installiert werden — nur so prueft der Test das Paket und nicht den
+      # Baum.
+      - name: Run the autopkgtest against the installed package
+        run: sudo autopkgtest --no-built-binaries ../jabraw_*_amd64.deb . -- null
