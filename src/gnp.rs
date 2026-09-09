@@ -129,3 +129,68 @@ pub fn text(data: &[u8]) -> Option<String> {
     }
     Some(rest.iter().map(|&b| b as char).collect())
 }
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_request_is_not_a_response() {
+        let req = read_body(DST_HEADSET, 7, CMD_IDENT, SUB_NAME);
+        assert!(parse_body(&req).is_none());
+    }
+
+    #[test]
+    fn a_length_past_the_packet_is_rejected() {
+        let body = [0, DST_HEADSET, 7, (TYPE_RESPONSE << 6) | 20, CMD_IDENT, SUB_NAME];
+        assert!(parse_body(&body).is_none());
+    }
+
+    #[test]
+    fn the_payload_is_cut_at_the_length_field() {
+        let mut body = vec![0, DST_HEADSET, 7, (TYPE_RESPONSE << 6) | 8, CMD_IDENT, SUB_NAME];
+        body.extend_from_slice(&[0xaa, 0xbb, 0xcc]);
+        let r = parse_body(&body).unwrap();
+        assert_eq!((r.src, r.seq, r.cmd, r.sub), (DST_HEADSET, 7, CMD_IDENT, SUB_NAME));
+        assert_eq!(r.data, &[0xaa, 0xbb]);
+    }
+
+    #[test]
+    fn over_hidraw_the_report_id_has_to_be_there() {
+        let body = [0, DST_HEADSET, 7, (TYPE_RESPONSE << 6) | 6, CMD_IDENT, SUB_NAME];
+        assert!(parse(&body).is_none());
+        let mut report = vec![REPORT_ID];
+        report.extend_from_slice(&body);
+        assert!(parse(&report).is_some());
+    }
+
+    #[test]
+    fn text_stops_at_the_length_byte() {
+        assert_eq!(text(&[3, b'a', b'b', b'c', b'd']).as_deref(), Some("abc"));
+    }
+
+    #[test]
+    fn text_rejects_what_it_cannot_show() {
+        // Length past the end, a control character, and nothing at all.
+        assert!(text(&[9, b'a']).is_none());
+        assert!(text(&[2, b'a', 0x07]).is_none());
+        assert!(text(&[0]).is_none());
+        assert!(text(&[]).is_none());
+    }
+
+    #[test]
+    fn the_charge_level_is_the_second_byte() {
+        assert_eq!(battery_percent(&[0x00, 32, 0, 0]), Some(32));
+        // Above 100 is not a percentage, so it is no answer either.
+        assert_eq!(battery_percent(&[0x00, 101]), None);
+        assert_eq!(battery_percent(&[0x00]), None);
+    }
+
+    #[test]
+    fn charging_is_bit_zero_of_the_first() {
+        assert!(battery_charging(&[0x25]));
+        assert!(!battery_charging(&[0x24]));
+        assert!(!battery_charging(&[]));
+    }
+}

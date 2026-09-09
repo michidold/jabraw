@@ -201,3 +201,17 @@ pub fn spawn_reader(path: String, mut file: std::fs::File, tx: mpsc::Sender<Msg>
         let _ = tx.blocking_send(Msg::Closed(path));
     });
 }
+
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn control_characters_leave_the_name() {
+        assert_eq!(super::clean(" Jabra\u{7}\nLink 380 "), "JabraLink 380");
+    }
+
+    #[test]
+    fn the_first_four_payload_bytes_are_the_bit_field() {
+        assert_eq!(super::payload_bits(&[0x01, 0x02, 0, 0, 0x01]), 0x0100_0002);
+    }
+}

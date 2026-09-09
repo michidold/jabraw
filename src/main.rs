@@ -864,3 +864,15 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 }
+
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn what_a_dialog_parses_as_markup_is_escaped() {
+        assert_eq!(
+            super::escape_markup("Jabra & <b>Evolve</b>"),
+            "Jabra &amp; &lt;b&gt;Evolve&lt;/b&gt;"
+        );
+    }
+}
