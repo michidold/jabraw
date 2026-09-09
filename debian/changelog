@@ -1,3 +1,15 @@
+jabraw (0.4.1-1) unstable; urgency=medium
+
+  * Put a deadline on every D-Bus call; zbus waits for a reply without one.
+  * Run the whole RFCOMM session beside the main loop, and ask a headset for
+    its identity once per session whether it answers or not.
+  * Fail the package build when a library dependency cannot be determined.
+  * Build the release without write access to the repository and audit the
+    dependencies before publishing.
+  * Add unit tests for the paths that parse what the device sends.
+
+ -- Michael Dold <michidold@users.noreply.github.com>  Wed, 09 Sep 2026 11:20:00 +0200
+
 jabraw (0.4.0-1) unstable; urgency=medium
 
   * Fix the RFCOMM profile registration, which left the daemon unable to
