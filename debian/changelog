@@ -1,3 +1,15 @@
+jabraw (0.4.2-1) unstable; urgency=medium
+
+  * Keep an RFCOMM session when the headset does not know a subcommand; only a
+    broken socket ends it now. A device that reports its battery but not its
+    name reconnected in a loop and never got as far as the battery.
+  * Ship the manual page, copyright and changelog in the .deb, register the
+    autostart entry as a conffile, and strip the binary.
+  * Format the tree with rustfmt, and check formatting, lints and tests on
+    every push.
+
+ -- Michael Dold <michidold@users.noreply.github.com>  Wed, 09 Sep 2026 12:21:02 +0200
+
 jabraw (0.4.1-1) unstable; urgency=medium
 
   * Put a deadline on every D-Bus call; zbus waits for a reply without one.
