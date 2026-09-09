@@ -41,6 +41,35 @@ enum Pending {
     Ident { dst: u8, sub: u8 },
 }
 
+/// Work on the RFCOMM session. Reading blocks for as long as the headset takes
+/// to answer, up to 900 ms per request, so the session travels to a task and
+/// back rather than the loop waiting for it.
+enum BtJob {
+    Ident,
+    Battery,
+    Settings,
+}
+
+enum BtData {
+    Connected,
+    Ident {
+        name: Option<Vec<u8>>,
+        ver: Option<Vec<u8>>,
+        ser: Option<Vec<u8>>,
+    },
+    Battery(Option<Vec<u8>>),
+    Settings(Vec<(&'static str, Vec<u8>)>),
+}
+
+struct BtResult {
+    /// BlueZ path the job was started for. The headset can change while it
+    /// runs, and the answer then belongs to nobody.
+    device: String,
+    /// Handed back unless the link went silent, which ends the session.
+    session: Option<rfcomm::Session>,
+    data: BtData,
+}
+
 /// Tick for device rescan and refreshing the tray.
 const REFRESH_INTERVAL: Duration = Duration::from_secs(2);
 /// Battery every 30 s, that is every 15th tick.
@@ -57,6 +86,8 @@ const BLUETOOTH_RETRY_MAX: u32 = 150;
 /// device firing reports faster than they are handled cannot grow the process.
 const HID_QUEUE: usize = 256;
 const CMD_QUEUE: usize = 32;
+/// One job at a time, so a single slot would do; four leaves room.
+const BT_QUEUE: usize = 4;
 
 /// A short status report as a desktop notification.
 async fn notify_status(conn: &zbus::Connection) {
@@ -234,6 +265,37 @@ where
     });
 }
 
+fn spawn_bt(mut s: rfcomm::Session, job: BtJob, device: String, tx: mpsc::Sender<BtResult>) {
+    tokio::task::spawn_blocking(move || {
+        let d = gnp::DST_HEADSET;
+        let (data, alive) = match job {
+            BtJob::Ident => {
+                let name = s.read(d, gnp::CMD_IDENT, gnp::SUB_NAME);
+                let ver = s.read(d, gnp::CMD_IDENT, gnp::SUB_VERSION);
+                let ser = s.read(d, gnp::CMD_IDENT, gnp::SUB_SERIAL);
+                let alive = name.is_some() || ver.is_some() || ser.is_some();
+                (BtData::Ident { name, ver, ser }, alive)
+            }
+            BtJob::Battery => {
+                let bat = s.read(d, gnp::CMD_STATUS, gnp::SUB_HS_BATTERY);
+                let alive = bat.is_some();
+                (BtData::Battery(bat), alive)
+            }
+            BtJob::Settings => {
+                let rows = s.sweep(d, gnp::CMD_CONFIG, config::SETTINGS);
+                let alive = !rows.is_empty();
+                (BtData::Settings(rows), alive)
+            }
+        };
+        // If everything stayed silent, the link is dead.
+        let _ = tx.blocking_send(BtResult {
+            device,
+            session: alive.then_some(s),
+            data,
+        });
+    });
+}
+
 async fn config_via_hidraw(path: String) -> Vec<config::Setting> {
     match tokio::task::spawn_blocking(move || config::read_all(&path)).await {
         Ok(Ok(v)) => v,
@@ -385,6 +447,7 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
 
     let (hid_tx, mut hid_rx) = mpsc::channel::<Msg>(HID_QUEUE);
     let (cmd_tx, mut cmd_rx) = mpsc::channel::<Cmd>(CMD_QUEUE);
+    let (bt_tx, mut bt_rx) = mpsc::channel::<BtResult>(BT_QUEUE);
 
     // Writable copies of the device handles, for GNP requests.
     let mut writers: HashMap<String, std::fs::File> = HashMap::new();
@@ -399,6 +462,10 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
     let mut bt_level: Option<(u8, bool)> = None;
     let mut bt_wait = BLUETOOTH_EVERY_N_TICKS;
     let mut bt_next_try: u32 = 0;
+    // A job holds the session while it runs.
+    let mut bt_busy = false;
+    // Set once the identity was asked for, answered or not.
+    let mut bt_ident_done = false;
     let mut session: Option<rfcomm::Session> = None;
     let mut seq: u8 = 0;
     // Matches replies to our own requests; the device also sends on this
@@ -503,6 +570,7 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
                             bt_info = DeviceInfo::default();
                             bt_level = None;
                             session = None;
+                            bt_ident_done = false;
                             bt_wait = BLUETOOTH_EVERY_N_TICKS;
                             bt_next_try = ticks;
                         }
@@ -510,75 +578,51 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
                     }
 
                     // GNP over RFCOMM is more precise than the coarse HFP
-                    // indicator, and adds firmware and serial number.
+                    // indicator, and adds firmware and serial number. Both the
+                    // handshake and the reads run beside the loop: either can
+                    // take seconds when the headset is slow to answer.
                     if bt.is_none() {
                         session = None;
                         bt_info = DeviceInfo::default();
                         bt_level = None;
+                        bt_ident_done = false;
                         // The next headset starts with a clean backoff.
                         bt_wait = BLUETOOTH_EVERY_N_TICKS;
                         bt_next_try = ticks;
-                    } else if session.is_none() && ticks >= bt_next_try {
-                        if let (Some(c), Some(p)) = (&system, &bt_path) {
-                            session = rfcomm::connect(c, p).await;
-                            if session.is_some() {
-                                println!("GNP over RFCOMM established");
-                                bt_wait = BLUETOOTH_EVERY_N_TICKS;
-                            } else {
-                                // A headset without the serial profile would
-                                // otherwise cost the full timeout every round.
-                                bt_wait = (bt_wait * 2).min(BLUETOOTH_RETRY_MAX);
+                    } else if !bt_busy {
+                        if session.is_none() {
+                            if ticks >= bt_next_try {
+                                if let (Some(c), Some(p)) = (&system, &bt_path) {
+                                    let (c, p) = (c.clone(), p.clone());
+                                    let tx = bt_tx.clone();
+                                    bt_busy = true;
+                                    tokio::spawn(async move {
+                                        let session = rfcomm::connect(&c, &p).await;
+                                        let _ = tx
+                                            .send(BtResult {
+                                                device: p,
+                                                session,
+                                                data: BtData::Connected,
+                                            })
+                                            .await;
+                                    });
+                                }
                             }
-                            bt_next_try = ticks.saturating_add(bt_wait);
-                        }
-                    }
-                    if let Some(mut s) = session.take() {
-                        // Identity stays put while the session stands, and the
-                        // charge level moves in whole percent: asking for
-                        // either every two seconds buys nothing but timeouts.
-                        let ident = bt_info.headset_version.is_none();
-                        if !ident && !slow {
-                            session = Some(s);
                         } else {
-                            let out = tokio::task::spawn_blocking(move || {
-                                let d = gnp::DST_HEADSET;
-                                let read = |s: &mut rfcomm::Session, c, sub| {
-                                    s.read(d, c, sub)
-                                };
-                                let name = ident
-                                    .then(|| read(&mut s, gnp::CMD_IDENT, gnp::SUB_NAME))
-                                    .flatten();
-                                let ver = ident
-                                    .then(|| read(&mut s, gnp::CMD_IDENT, gnp::SUB_VERSION))
-                                    .flatten();
-                                let ser = ident
-                                    .then(|| read(&mut s, gnp::CMD_IDENT, gnp::SUB_SERIAL))
-                                    .flatten();
-                                let bat = slow
-                                    .then(|| {
-                                        read(&mut s, gnp::CMD_STATUS, gnp::SUB_HS_BATTERY)
-                                    })
-                                    .flatten();
-                                (s, name, ver, ser, bat)
-                            })
-                            .await;
-                            if let Ok((s, name, ver, ser, bat)) = out {
-                                let any = name.is_some() || bat.is_some();
-                                if let Some(v) = name.as_deref().and_then(gnp::text) {
-                                    bt_info.headset_name = Some(v);
+                            // Identity stays put while the session stands, and
+                            // the charge level moves in whole percent.
+                            let job = if !bt_ident_done {
+                                Some(BtJob::Ident)
+                            } else if slow {
+                                Some(BtJob::Battery)
+                            } else {
+                                None
+                            };
+                            if let (Some(job), Some(p)) = (job, bt_path.clone()) {
+                                if let Some(s) = session.take() {
+                                    bt_busy = true;
+                                    spawn_bt(s, job, p, bt_tx.clone());
                                 }
-                                if let Some(v) = ver.as_deref().and_then(gnp::text) {
-                                    bt_info.headset_version = Some(v);
-                                }
-                                if let Some(v) = ser.as_deref().and_then(gnp::text) {
-                                    bt_info.headset_serial = Some(v);
-                                }
-                                if let Some(d) = bat.as_deref() {
-                                    bt_level = gnp::battery_percent(d)
-                                        .map(|p| (p, gnp::battery_charging(d)));
-                                }
-                                // If everything stays silent, the link is dead.
-                                session = any.then_some(s);
                             }
                         }
                     }
@@ -611,7 +655,7 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
                         .or_else(|| names.values().next().cloned())
                         .or_else(|| bt.as_ref().map(|d| d.name.clone()));
                     let info_snapshot = info.clone();
-                    let has_gnp = !writers.is_empty() || session.is_some();
+                    let has_gnp = !writers.is_empty() || session.is_some() || bt_busy;
                     if ticks.is_multiple_of(SINKS_EVERY_N_TICKS) || sinks.is_empty() {
                         sinks = audio::list_sinks().await;
                     }
@@ -651,24 +695,14 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
                         spawn_dialog(&dialog_open, async move {
                             show_settings(config_via_hidraw(path).await).await
                         });
-                    } else if let Some(mut s) = session.take() {
-                        // The sweep has to give the session back, so it stays
-                        // here; only the dialog moves off the loop.
-                        let out = tokio::task::spawn_blocking(move || {
-                            let rows = s.sweep(
-                                gnp::DST_HEADSET,
-                                gnp::CMD_CONFIG,
-                                config::SETTINGS,
-                            );
-                            (s, rows)
-                        })
-                        .await;
-                        if let Ok((s, rows)) = out {
-                            session = Some(s);
-                            let rows = config::from_sweep(rows);
-                            spawn_dialog(&dialog_open, async move {
-                                show_settings(rows).await
-                            });
+                    } else if !bt_busy {
+                        // The sweep goes through the same job as the reads;
+                        // the dialog follows when the rows come back.
+                        if let Some(p) = bt_path.clone() {
+                            if let Some(s) = session.take() {
+                                bt_busy = true;
+                                spawn_bt(s, BtJob::Settings, p, bt_tx.clone());
+                            }
                         }
                     }
                 }
@@ -682,6 +716,55 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
                     return Ok(());
                 }
             },
+
+            Some(res) = bt_rx.recv() => {
+                bt_busy = false;
+                if bt_path.as_deref() != Some(res.device.as_str()) {
+                    // Answer for a headset that has since gone or changed.
+                    continue;
+                }
+                session = res.session;
+                match res.data {
+                    BtData::Connected => {
+                        if session.is_some() {
+                            println!("GNP over RFCOMM established");
+                            bt_ident_done = false;
+                            bt_wait = BLUETOOTH_EVERY_N_TICKS;
+                        } else {
+                            // A headset without the serial profile would
+                            // otherwise be asked again every round.
+                            bt_wait = (bt_wait * 2).min(BLUETOOTH_RETRY_MAX);
+                        }
+                        bt_next_try = ticks.saturating_add(bt_wait);
+                    }
+                    // Asked once per session, answered or not: a headset that
+                    // stays silent must not be asked again on every tick.
+                    BtData::Ident { name, ver, ser } => {
+                        bt_ident_done = true;
+                        if let Some(v) = name.as_deref().and_then(gnp::text) {
+                            bt_info.headset_name = Some(v);
+                        }
+                        if let Some(v) = ver.as_deref().and_then(gnp::text) {
+                            bt_info.headset_version = Some(v);
+                        }
+                        if let Some(v) = ser.as_deref().and_then(gnp::text) {
+                            bt_info.headset_serial = Some(v);
+                        }
+                    }
+                    BtData::Battery(bat) => {
+                        if let Some(d) = bat.as_deref() {
+                            bt_level = gnp::battery_percent(d)
+                                .map(|p| (p, gnp::battery_charging(d)));
+                        }
+                    }
+                    BtData::Settings(rows) => {
+                        let rows = config::from_sweep(rows);
+                        spawn_dialog(&dialog_open, async move {
+                            show_settings(rows).await
+                        });
+                    }
+                }
+            }
 
             Some(msg) = hid_rx.recv() => match msg {
                 Msg::Closed(path) => {
