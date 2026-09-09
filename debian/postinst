@@ -1,0 +1,16 @@
+#!/bin/sh
+set -e
+# uaccess is evaluated by 73-seat-late.rules, so the rule sits under 70- and
+# has to be read in once after installation. The trigger also makes the device
+# pull in jabraw.service, which starts the daemon without a login.
+#
+# No icon cache call, unlike packaging/postinst: hicolor-icon-theme has a dpkg
+# trigger on /usr/share/icons/hicolor that does it.
+if command -v udevadm >/dev/null 2>&1; then
+    udevadm control --reload-rules || true
+    udevadm trigger --subsystem-match=hidraw || true
+fi
+
+#DEBHELPER#
+
+exit 0

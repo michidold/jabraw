@@ -1,0 +1,11 @@
+#!/bin/sh
+set -e
+if [ "$1" = "remove" ] && [ -d /run/systemd/system ]; then
+    # Only relevant when somebody enabled the unit by hand; the package never
+    # does. See debian/jabraw.lintian-overrides.
+    systemctl --global disable jabraw.service 2>/dev/null || true
+fi
+
+#DEBHELPER#
+
+exit 0
