@@ -1,3 +1,14 @@
+jabraw (0.4.0-1) unstable; urgency=medium
+
+  * Fix the RFCOMM profile registration, which left the daemon unable to
+    reconnect over Bluetooth and stalled its loop on every attempt.
+  * Run the dialogs beside the main loop, cap the audio helpers, bound the
+    internal queues and read the headset only when something can change.
+  * Require an authenticated Bluetooth link, match the incoming socket to the
+    device it was asked for, and escape what the device calls itself.
+
+ -- Michael Dold <michidold@users.noreply.github.com>  Wed, 09 Sep 2026 10:46:36 +0200
+
 jabraw (0.3.5-1) unstable; urgency=medium
 
   * Start the daemon from udev when a Jabra device appears, rather than at
