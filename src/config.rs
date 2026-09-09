@@ -39,90 +39,167 @@ pub enum Kind {
 
 pub struct Def {
     pub sub: u8,
+    /// Jabra's own identifier, and the key that joins this table to the model
+    /// files described in `doc/settings-sources.md`.
     pub name: &'static str,
     pub kind: Kind,
+    /// What the dialog shows. Where the model files name a setting, that name
+    /// is followed; everything else only makes the identifier readable rather
+    /// than guessing at what the setting does.
+    pub label: &'static str,
+    pub label_de: &'static str,
+}
+
+impl Def {
+    pub fn label(&self) -> &'static str {
+        if crate::i18n::german() {
+            self.label_de
+        } else {
+            self.label
+        }
+    }
 }
 
 // One row per setting; rustfmt would give every field a line of its own and
 // turn the table into three hundred lines.
 #[rustfmt::skip]
 pub const SETTINGS: &[Def] = &[
-    Def { sub: 0, name: "audioType", kind: Kind::Switch },
-    Def { sub: 1, name: "intellitoneLevel", kind: Kind::Choice },
-    Def { sub: 2, name: "touchAudioFeedback", kind: Kind::Switch },
-    Def { sub: 3, name: "ringerVolume", kind: Kind::Switch },
-    Def { sub: 5, name: "phonePresence", kind: Kind::Switch },
-    Def { sub: 8, name: "currentLanguage", kind: Kind::Choice },
-    Def { sub: 13, name: "micGain", kind: Kind::Switch },
-    Def { sub: 14, name: "rfPower", kind: Kind::Choice },
-    Def { sub: 19, name: "hsRinger", kind: Kind::Switch },
-    Def { sub: 21, name: "soundMode", kind: Kind::Choice },
-    Def { sub: 27, name: "powersave", kind: Kind::Switch },
-    Def { sub: 30, name: "muteReminderInterval", kind: Kind::Choice },
-    Def { sub: 33, name: "autoOpenHardphone", kind: Kind::Switch },
-    Def { sub: 36, name: "autoOpenSoftphone", kind: Kind::Switch },
-    Def { sub: 37, name: "musicMode", kind: Kind::Switch },
-    Def { sub: 39, name: "buttonFunction", kind: Kind::Choice },
-    Def { sub: 50, name: "singleCallConf", kind: Kind::Switch },
-    Def { sub: 51, name: "idlePowerSave", kind: Kind::Switch },
-    Def { sub: 53, name: "hsTouchSensor", kind: Kind::Switch },
-    Def { sub: 55, name: "ancGain", kind: Kind::Switch },
-    Def { sub: 57, name: "busylight", kind: Kind::Switch },
-    Def { sub: 58, name: "hsVoicePrompts", kind: Kind::Choice },
-    Def { sub: 59, name: "hsMotionSensor", kind: Kind::Switch },
-    Def { sub: 60, name: "autoRejectBgWaiting", kind: Kind::Switch },
-    Def { sub: 61, name: "ringtoneType", kind: Kind::Switch },
-    Def { sub: 62, name: "ringOnSecondIncomingCall", kind: Kind::Switch },
-    Def { sub: 63, name: "buttonSounds", kind: Kind::Switch },
-    Def { sub: 64, name: "autoPairing", kind: Kind::Switch },
-    Def { sub: 69, name: "acceptCallOnUndock", kind: Kind::Switch },
-    Def { sub: 74, name: "ctrlBusylight", kind: Kind::Switch },
-    Def { sub: 80, name: "undockOpenAudioLink", kind: Kind::Switch },
-    Def { sub: 82, name: "ancLed", kind: Kind::Switch },
-    Def { sub: 83, name: "ancMonitorLed", kind: Kind::Switch },
-    Def { sub: 84, name: "audioStreaming", kind: Kind::Switch },
-    Def { sub: 92, name: "buttonSwapFunction", kind: Kind::Switch },
-    Def { sub: 104, name: "sidetoneLevel", kind: Kind::Choice },
-    Def { sub: 112, name: "lowBatteryAudioNotifications", kind: Kind::Switch },
-    Def { sub: 114, name: "echoCancel", kind: Kind::Switch },
-    Def { sub: 120, name: "powerNap", kind: Kind::Switch },
-    Def { sub: 124, name: "dspSidetone", kind: Kind::Switch },
-    Def { sub: 125, name: "equalizer", kind: Kind::Switch },
-    Def { sub: 126, name: "equalizerEnable", kind: Kind::Switch },
-    Def { sub: 133, name: "sidetoneMute", kind: Kind::Switch },
-    Def { sub: 134, name: "hallSensor", kind: Kind::Switch },
-    Def { sub: 135, name: "anc", kind: Kind::Switch },
-    Def { sub: 138, name: "selectButtonFunction", kind: Kind::Switch },
-    Def { sub: 142, name: "autoPauseMusic", kind: Kind::Switch },
-    Def { sub: 143, name: "autoMuteCallAudio", kind: Kind::Switch },
-    Def { sub: 144, name: "inactivityInterval", kind: Kind::Choice },
-    Def { sub: 145, name: "autoAnswerCall", kind: Kind::Switch },
-    Def { sub: 146, name: "onHeadDetection", kind: Kind::Switch },
-    Def { sub: 147, name: "alwaysOnVoice", kind: Kind::Switch },
-    Def { sub: 149, name: "automaticSpeechRecognition", kind: Kind::Switch },
-    Def { sub: 152, name: "boomarmRotationAction", kind: Kind::Choice },
-    Def { sub: 153, name: "streamPriority", kind: Kind::Switch },
-    Def { sub: 188, name: "callAcceptedSound", kind: Kind::Choice },
+    Def { sub: 0, name: "audioType", kind: Kind::Switch,
+          label: "Audio type", label_de: "Audiotyp" },
+    Def { sub: 1, name: "intellitoneLevel", kind: Kind::Choice,
+          label: "Hearing protection", label_de: "Gehörschutz" },
+    Def { sub: 2, name: "touchAudioFeedback", kind: Kind::Switch,
+          label: "Touch feedback sounds", label_de: "Töne bei Berührung" },
+    Def { sub: 3, name: "ringerVolume", kind: Kind::Switch,
+          label: "Ringtone volume", label_de: "Klingellautstärke" },
+    Def { sub: 5, name: "phonePresence", kind: Kind::Switch,
+          label: "Phone presence", label_de: "Telefon-Präsenz" },
+    Def { sub: 8, name: "currentLanguage", kind: Kind::Choice,
+          label: "Device language", label_de: "Gerätesprache" },
+    Def { sub: 13, name: "micGain", kind: Kind::Switch,
+          label: "Microphone gain", label_de: "Mikrofonverstärkung" },
+    Def { sub: 14, name: "rfPower", kind: Kind::Choice,
+          label: "Wireless range", label_de: "Funkreichweite" },
+    Def { sub: 19, name: "hsRinger", kind: Kind::Switch,
+          label: "Ringtone in headset", label_de: "Klingelton im Headset" },
+    Def { sub: 21, name: "soundMode", kind: Kind::Choice,
+          label: "Sound mode", label_de: "Klangmodus" },
+    Def { sub: 27, name: "powersave", kind: Kind::Switch,
+          label: "Power saving", label_de: "Energiesparen" },
+    Def { sub: 30, name: "muteReminderInterval", kind: Kind::Choice,
+          label: "Mute reminder", label_de: "Stummschalt-Erinnerung" },
+    Def { sub: 33, name: "autoOpenHardphone", kind: Kind::Switch,
+          label: "Open desk phone line automatically", label_de: "Tischtelefon-Leitung automatisch öffnen" },
+    Def { sub: 36, name: "autoOpenSoftphone", kind: Kind::Switch,
+          label: "Open softphone line automatically", label_de: "Softphone-Leitung automatisch öffnen" },
+    Def { sub: 37, name: "musicMode", kind: Kind::Switch,
+          label: "Music mode", label_de: "Musikmodus" },
+    Def { sub: 39, name: "buttonFunction", kind: Kind::Choice,
+          label: "Button function", label_de: "Tastenbelegung" },
+    Def { sub: 50, name: "singleCallConf", kind: Kind::Switch,
+          label: "Single call", label_de: "Einzelanruf" },
+    Def { sub: 51, name: "idlePowerSave", kind: Kind::Switch,
+          label: "Power saving when idle", label_de: "Energiesparen im Leerlauf" },
+    Def { sub: 53, name: "hsTouchSensor", kind: Kind::Switch,
+          label: "Touch sensor", label_de: "Berührungssensor" },
+    Def { sub: 55, name: "ancGain", kind: Kind::Switch,
+          label: "Noise cancellation strength", label_de: "Stärke der Geräuschunterdrückung" },
+    Def { sub: 57, name: "busylight", kind: Kind::Switch,
+          label: "Busylight", label_de: "Besetztlicht" },
+    Def { sub: 58, name: "hsVoicePrompts", kind: Kind::Choice,
+          label: "Audio announcements", label_de: "Sprachansagen" },
+    Def { sub: 59, name: "hsMotionSensor", kind: Kind::Switch,
+          label: "Motion sensor", label_de: "Bewegungssensor" },
+    Def { sub: 60, name: "autoRejectBgWaiting", kind: Kind::Switch,
+          label: "Reject waiting calls automatically", label_de: "Wartende Anrufe automatisch abweisen" },
+    Def { sub: 61, name: "ringtoneType", kind: Kind::Switch,
+          label: "Ringtone", label_de: "Klingelton" },
+    Def { sub: 62, name: "ringOnSecondIncomingCall", kind: Kind::Switch,
+          label: "Ring on a second call", label_de: "Klingeln bei zweitem Anruf" },
+    Def { sub: 63, name: "buttonSounds", kind: Kind::Switch,
+          label: "Button sounds", label_de: "Tastentöne" },
+    Def { sub: 64, name: "autoPairing", kind: Kind::Switch,
+          label: "Automatic pairing", label_de: "Automatisches Koppeln" },
+    Def { sub: 69, name: "acceptCallOnUndock", kind: Kind::Switch,
+          label: "Accept a call on undocking", label_de: "Anruf beim Entnehmen annehmen" },
+    Def { sub: 74, name: "ctrlBusylight", kind: Kind::Switch,
+          label: "Busylight control", label_de: "Besetztlicht-Steuerung" },
+    Def { sub: 80, name: "undockOpenAudioLink", kind: Kind::Switch,
+          label: "Open the audio link on undocking", label_de: "Audioverbindung beim Entnehmen öffnen" },
+    Def { sub: 82, name: "ancLed", kind: Kind::Switch,
+          label: "Noise cancellation indicator", label_de: "Anzeige der Geräuschunterdrückung" },
+    Def { sub: 83, name: "ancMonitorLed", kind: Kind::Switch,
+          label: "Monitor mode indicator", label_de: "Anzeige des Monitor-Modus" },
+    Def { sub: 84, name: "audioStreaming", kind: Kind::Switch,
+          label: "Audio streaming", label_de: "Audio-Streaming" },
+    Def { sub: 92, name: "buttonSwapFunction", kind: Kind::Switch,
+          label: "Swapped button functions", label_de: "Vertauschte Tastenbelegung" },
+    Def { sub: 104, name: "sidetoneLevel", kind: Kind::Choice,
+          label: "Sidetone level", label_de: "Mithörton-Pegel" },
+    Def { sub: 112, name: "lowBatteryAudioNotifications", kind: Kind::Switch,
+          label: "Low battery announcement", label_de: "Ansage bei schwachem Akku" },
+    Def { sub: 114, name: "echoCancel", kind: Kind::Switch,
+          label: "Echo cancellation", label_de: "Echounterdrückung" },
+    Def { sub: 120, name: "powerNap", kind: Kind::Switch,
+          label: "Power nap", label_de: "Power Nap" },
+    Def { sub: 124, name: "dspSidetone", kind: Kind::Switch,
+          label: "Sidetone", label_de: "Mithörton" },
+    Def { sub: 125, name: "equalizer", kind: Kind::Switch,
+          label: "Equalizer", label_de: "Equalizer" },
+    Def { sub: 126, name: "equalizerEnable", kind: Kind::Switch,
+          label: "Equalizer on", label_de: "Equalizer aktiv" },
+    Def { sub: 133, name: "sidetoneMute", kind: Kind::Switch,
+          label: "Sidetone while muted", label_de: "Mithörton bei Stummschaltung" },
+    Def { sub: 134, name: "hallSensor", kind: Kind::Switch,
+          label: "Hall sensor", label_de: "Hall-Sensor" },
+    Def { sub: 135, name: "anc", kind: Kind::Switch,
+          label: "Active noise cancellation", label_de: "Aktive Geräuschunterdrückung" },
+    Def { sub: 138, name: "selectButtonFunction", kind: Kind::Switch,
+          label: "Select button function", label_de: "Belegung der Auswahltaste" },
+    Def { sub: 142, name: "autoPauseMusic", kind: Kind::Switch,
+          label: "Pause music when taken off", label_de: "Musik beim Absetzen pausieren" },
+    Def { sub: 143, name: "autoMuteCallAudio", kind: Kind::Switch,
+          label: "Mute call audio automatically", label_de: "Gesprächston automatisch stummschalten" },
+    Def { sub: 144, name: "inactivityInterval", kind: Kind::Choice,
+          label: "Auto sleep after", label_de: "Ruhezustand nach" },
+    Def { sub: 145, name: "autoAnswerCall", kind: Kind::Switch,
+          label: "Answer calls automatically", label_de: "Anrufe automatisch annehmen" },
+    Def { sub: 146, name: "onHeadDetection", kind: Kind::Switch,
+          label: "On-head detection", label_de: "Trageerkennung" },
+    Def { sub: 147, name: "alwaysOnVoice", kind: Kind::Switch,
+          label: "Always-on voice assistant", label_de: "Sprachassistent immer aktiv" },
+    Def { sub: 149, name: "automaticSpeechRecognition", kind: Kind::Switch,
+          label: "Speech recognition", label_de: "Spracherkennung" },
+    Def { sub: 152, name: "boomarmRotationAction", kind: Kind::Choice,
+          label: "Boom arm rotation", label_de: "Mikrofonarm-Drehung" },
+    Def { sub: 153, name: "streamPriority", kind: Kind::Switch,
+          label: "Stream priority", label_de: "Stream-Priorität" },
+    Def { sub: 188, name: "callAcceptedSound", kind: Kind::Choice,
+          label: "Call accepted sound", label_de: "Ton bei angenommenem Anruf" },
 ];
 
 /// Turns the replies of an RFCOMM sweep into display rows.
 pub fn from_sweep(rows: Vec<(&'static str, Vec<u8>)>) -> Vec<Setting> {
-    rows.into_iter()
-        .map(|(name, value)| Setting {
-            device: "Headset",
-            name,
-            kind: kind_of(name),
-            value,
+    let mut out: Vec<Setting> = rows
+        .into_iter()
+        .map(|(name, value)| {
+            let def = def_of(name);
+            Setting {
+                device: "Headset",
+                label: def.map_or(name, |d| d.label()),
+                kind: def.map_or(Kind::Switch, |d| d.kind),
+                value,
+            }
         })
-        .collect()
+        .collect();
+    // The dialog reads in the order it shows, not in Jabra's.
+    out.sort_by_key(|s| s.label);
+    out
 }
 
 /// The list is short enough that a scan beats carrying a map around.
-fn kind_of(name: &str) -> Kind {
-    SETTINGS
-        .iter()
-        .find(|d| d.name == name)
-        .map_or(Kind::Switch, |d| d.kind)
+fn def_of(name: &str) -> Option<&'static Def> {
+    SETTINGS.iter().find(|d| d.name == name)
 }
 
 /// Subcommand and name for a transport that has no use for the rest.
@@ -132,7 +209,7 @@ pub fn subs() -> Vec<(u8, &'static str)> {
 
 pub struct Setting {
     pub device: &'static str,
-    pub name: &'static str,
+    pub label: &'static str,
     pub kind: Kind,
     pub value: Vec<u8>,
 }
@@ -185,15 +262,16 @@ fn sweep(file: &mut std::fs::File, dst: u8, label: &'static str) -> std::io::Res
             continue;
         }
         if let Some(name) = pending.remove(&r.seq) {
+            let def = def_of(name);
             found.push(Setting {
                 device: label,
-                name,
-                kind: kind_of(name),
+                label: def.map_or(name, |d| d.label()),
+                kind: def.map_or(Kind::Switch, |d| d.kind),
                 value: r.data.to_vec(),
             });
         }
     }
-    found.sort_by_key(|s| s.name);
+    found.sort_by_key(|s| s.label);
     Ok(found)
 }
 

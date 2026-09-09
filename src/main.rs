@@ -350,7 +350,7 @@ async fn show_settings(settings: Vec<config::Setting>) {
     ];
     for item in &settings {
         args.push(item.device.to_string());
-        args.push(item.name.to_string());
+        args.push(item.label.to_string());
         args.push(format_value(item.kind, &item.value));
     }
     match tokio::process::Command::new("zenity")
@@ -366,7 +366,7 @@ async fn show_settings(settings: Vec<config::Setting>) {
                     format!(
                         "{} {}: {}",
                         i.device,
-                        i.name,
+                        i.label,
                         format_value(i.kind, &i.value)
                     )
                 })

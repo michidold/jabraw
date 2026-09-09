@@ -120,12 +120,16 @@ const DE: Strings = Strings {
 
 /// Language from the environment. English is the default, German only on an
 /// explicitly German locale.
-pub fn strings() -> &'static Strings {
-    let locale = ["LC_ALL", "LC_MESSAGES", "LANG"]
+pub fn german() -> bool {
+    ["LC_ALL", "LC_MESSAGES", "LANG"]
         .iter()
         .find_map(|k| std::env::var(k).ok())
-        .unwrap_or_default();
-    if locale.starts_with("de") {
+        .unwrap_or_default()
+        .starts_with("de")
+}
+
+pub fn strings() -> &'static Strings {
+    if german() {
         &DE
     } else {
         &EN
