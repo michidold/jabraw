@@ -22,6 +22,8 @@ install -Dm644 packaging/jabraw-autostart.desktop \
     "$ROOT/etc/xdg/autostart/jabraw.desktop"
 install -Dm644 packaging/jabraw.desktop \
     "$ROOT/usr/share/applications/jabraw.desktop"
+install -Dm644 packaging/jabraw.metainfo.xml \
+    "$ROOT/usr/share/metainfo/io.github.michidold.Jabraw.metainfo.xml"
 # Symbole aus demselben Zeichencode wie das Tray-Symbol, damit der Eintrag im
 # Anwendungsmenue genauso aussieht.
 ICONS=$(mktemp -d)
@@ -42,6 +44,8 @@ gzip -9n "$ROOT/usr/share/man/man1/jabraw.1"
 install -Dm644 debian/copyright "$ROOT/usr/share/doc/jabraw/copyright"
 gzip -9nc debian/changelog > "$ROOT/usr/share/doc/jabraw/changelog.gz"
 chmod 644 "$ROOT/usr/share/doc/jabraw/changelog.gz"
+install -Dm644 debian/jabraw.lintian-overrides \
+    "$ROOT/usr/share/lintian/overrides/jabraw"
 # Ohne diesen Eintrag ueberschreibt dpkg eine geaenderte Autostart-Datei beim
 # Upgrade wortlos, statt zu fragen.
 mkdir -p "$ROOT/DEBIAN"

@@ -1,0 +1,4 @@
+# The prerm takes back a "systemctl --global enable jabraw.service" that
+# somebody ran by hand. deb-systemd-helper, which the tag asks for, undoes only
+# what it enabled itself, so it cannot cover that case.
+jabraw: maintainer-script-calls-systemctl

@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.michidold.Jabraw</id>
+
+  <name>Jabraw</name>
+  <summary>Media keys and tray menu for Jabra headsets</summary>
+  <summary xml:lang="de">Medientasten und Tray-Menü für Jabra-Headsets</summary>
+  <developer id="io.github.michidold">
+    <name>Michael Dold</name>
+  </developer>
+  <url type="homepage">https://github.com/michidold/jabraw</url>
+  <url type="bugtracker">https://github.com/michidold/jabraw/issues</url>
+  <url type="vcs-browser">https://github.com/michidold/jabraw</url>
+
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-or-later</project_license>
+
+  <description>
+    <p>
+      The multi-function button on Jabra headsets does nothing on Linux. Jabraw
+      makes it play and pause, and adds a tray menu for battery level, volume,
+      mute and output device.
+    </p>
+    <p xml:lang="de">
+      Die Multifunktionstaste von Jabra-Headsets tut unter Linux nichts. Jabraw
+      lässt sie abspielen und pausieren und ergänzt ein Tray-Menü für
+      Ladestand, Lautstärke, Stummschaltung und Ausgabegerät.
+    </p>
+    <p>
+      The button is out of reach through evdev: the dongle declares it as a
+      constant field in its HID report descriptor, so the kernel allocates no
+      key code for it. Jabraw reads the raw HID reports instead. Battery level,
+      firmware, serial number and the device settings come from the vendor
+      protocol, over the dongle as well as over Bluetooth.
+    </p>
+    <p xml:lang="de">
+      Über evdev ist die Taste nicht erreichbar: Der Dongle deklariert sie im
+      HID-Report-Descriptor als konstantes Feld, weshalb der Kernel keinen
+      Tastencode anlegt. Jabraw liest deshalb die rohen HID-Reports. Ladestand,
+      Firmware, Seriennummer und die Geräteeinstellungen kommen über das
+      Herstellerprotokoll, per Dongle wie per Bluetooth.
+    </p>
+    <p>
+      Devices are matched by vendor id rather than by model, so headsets other
+      than the Evolve2 65 this was developed against may work as well.
+    </p>
+    <p xml:lang="de">
+      Geräte werden über die Hersteller-ID erkannt, nicht über das Modell —
+      andere Headsets als das Evolve2 65, gegen das entwickelt wurde, können
+      also ebenfalls funktionieren.
+    </p>
+  </description>
+
+  <launchable type="desktop-id">jabraw.desktop</launchable>
+
+  <!-- Nothing to rate; software centres ask for the tag either way. -->
+  <content_rating type="oars-1.1" />
+
+  <provides>
+    <binary>jabraw</binary>
+    <!-- Matched by vendor, exactly as the udev rule matches. -->
+    <modalias>usb:v0B0Ep*</modalias>
+  </provides>
+</component>

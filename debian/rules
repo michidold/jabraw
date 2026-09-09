@@ -29,6 +29,8 @@ override_dh_auto_install:
 		debian/jabraw/etc/xdg/autostart/jabraw.desktop
 	install -Dm644 packaging/jabraw.desktop \
 		debian/jabraw/usr/share/applications/jabraw.desktop
+	install -Dm644 packaging/jabraw.metainfo.xml \
+		debian/jabraw/usr/share/metainfo/io.github.michidold.Jabraw.metainfo.xml
 	install -Dm644 packaging/50-jabraw-no-suspend.conf \
 		debian/jabraw/usr/share/wireplumber/wireplumber.conf.d/50-jabraw-no-suspend.conf
 	set -e; for f in debian/icons/*.png; do \
