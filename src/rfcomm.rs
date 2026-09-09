@@ -47,6 +47,28 @@ impl Profile {
     fn release(&self) {}
 }
 
+/// What came back from a read.
+///
+/// Silence and a broken socket have to be told apart: most headsets answer
+/// only a part of the subcommands, and taking the missing ones for a dead link
+/// would drop a session that still reports its battery.
+pub enum Reply {
+    Data(Vec<u8>),
+    /// Nothing arrived in time. The device may not know the subcommand.
+    Silent,
+    /// The socket is gone — the write failed, or the stream ended.
+    Dead,
+}
+
+impl Reply {
+    pub fn data(self) -> Option<Vec<u8>> {
+        match self {
+            Reply::Data(d) => Some(d),
+            _ => None,
+        }
+    }
+}
+
 /// An open RFCOMM session to a headset.
 pub struct Session {
     file: std::fs::File,
@@ -55,22 +77,39 @@ pub struct Session {
     /// are cut on the length field rather than assuming one packet per read as
     /// hidraw allows.
     buf: Vec<u8>,
+    /// Set once the socket has failed; the session is over then.
+    dead: bool,
 }
 
 impl Session {
-    /// One read request and its reply. `None` if the device stays silent.
-    pub fn read(&mut self, dst: u8, cmd: u8, sub: u8) -> Option<Vec<u8>> {
+    /// One read request and its reply.
+    pub fn read(&mut self, dst: u8, cmd: u8, sub: u8) -> Reply {
         let seq = self.next_seq();
-        self.file.write_all(&gnp::read_body(dst, seq, cmd, sub)).ok()?;
+        if self.file.write_all(&gnp::read_body(dst, seq, cmd, sub)).is_err() {
+            self.dead = true;
+            return Reply::Dead;
+        }
         let deadline = Instant::now() + Duration::from_millis(900);
         while let Some(pkt) = self.next_packet(deadline) {
-            let r = gnp::parse_body(&pkt)?;
-            // The device also sends unprompted; only our own reply counts.
-            if r.seq == seq && r.cmd == cmd && r.sub == sub {
-                return Some(r.data.to_vec());
+            // The device also sends unprompted; only our own reply counts, and
+            // a packet that makes no sense is not a reason to stop reading.
+            if let Some(r) = gnp::parse_body(&pkt) {
+                if r.seq == seq && r.cmd == cmd && r.sub == sub {
+                    return Reply::Data(r.data.to_vec());
+                }
             }
         }
-        None
+        if self.dead {
+            Reply::Dead
+        } else {
+            Reply::Silent
+        }
+    }
+
+    /// Whether the socket has failed. A sweep reports it this way, since it
+    /// collects whatever answers arrive rather than waiting for one.
+    pub fn is_dead(&self) -> bool {
+        self.dead
     }
 
     /// Sends every request first and collects the replies afterwards.
@@ -91,6 +130,7 @@ impl Session {
                 .write_all(&gnp::read_body(dst, seq, cmd, *sub))
                 .is_err()
             {
+                self.dead = true;
                 break;
             }
             pending.insert(seq, *name);
@@ -144,7 +184,10 @@ impl Session {
             }
             let mut chunk = [0u8; 256];
             match self.file.read(&mut chunk) {
-                Ok(0) | Err(_) => return None,
+                Ok(0) | Err(_) => {
+                    self.dead = true;
+                    return None;
+                }
                 Ok(n) => self.buf.extend_from_slice(&chunk[..n]),
             }
         }
@@ -248,5 +291,6 @@ async fn handshake(conn: &zbus::Connection, device: &str) -> Option<Session> {
         file: std::fs::File::from(fd),
         seq: 0x40,
         buf: Vec::new(),
+        dead: false,
     })
 }

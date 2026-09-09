@@ -270,24 +270,22 @@ fn spawn_bt(mut s: rfcomm::Session, job: BtJob, device: String, tx: mpsc::Sender
         let d = gnp::DST_HEADSET;
         let (data, alive) = match job {
             BtJob::Ident => {
-                let name = s.read(d, gnp::CMD_IDENT, gnp::SUB_NAME);
-                let ver = s.read(d, gnp::CMD_IDENT, gnp::SUB_VERSION);
-                let ser = s.read(d, gnp::CMD_IDENT, gnp::SUB_SERIAL);
-                let alive = name.is_some() || ver.is_some() || ser.is_some();
-                (BtData::Ident { name, ver, ser }, alive)
+                let name = s.read(d, gnp::CMD_IDENT, gnp::SUB_NAME).data();
+                let ver = s.read(d, gnp::CMD_IDENT, gnp::SUB_VERSION).data();
+                let ser = s.read(d, gnp::CMD_IDENT, gnp::SUB_SERIAL).data();
+                (BtData::Ident { name, ver, ser }, !s.is_dead())
             }
             BtJob::Battery => {
-                let bat = s.read(d, gnp::CMD_STATUS, gnp::SUB_HS_BATTERY);
-                let alive = bat.is_some();
-                (BtData::Battery(bat), alive)
+                let bat = s.read(d, gnp::CMD_STATUS, gnp::SUB_HS_BATTERY).data();
+                (BtData::Battery(bat), !s.is_dead())
             }
             BtJob::Settings => {
                 let rows = s.sweep(d, gnp::CMD_CONFIG, config::SETTINGS);
-                let alive = !rows.is_empty();
-                (BtData::Settings(rows), alive)
+                (BtData::Settings(rows), !s.is_dead())
             }
         };
-        // If everything stayed silent, the link is dead.
+        // Only a broken socket ends the session. Which subcommands a device
+        // answers differs per model, and silence is one of the answers.
         let _ = tx.blocking_send(BtResult {
             device,
             session: alive.then_some(s),
