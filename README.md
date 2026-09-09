@@ -30,10 +30,17 @@ to exist there as a `librust-*-dev` package and `debian/rules` would move to
 `dh-cargo`. Until then the source package builds locally and in CI, but not on
 a Debian buildd.
 
-Replug the dongle so udev applies the ACL, then log out and back in.
-Autostart runs the installed binary from then on, so reinstall after
-rebuilding — `jabraw --version` and the device information dialog both
-say which build is running.
+Replug the dongle afterwards: udev applies the ACL and starts the daemon
+right there, no logging out needed. From then on it comes up in two ways —
+at login through `/etc/xdg/autostart`, and whenever a Jabra device appears
+while a session is already running, through the udev rule that hangs
+`jabraw.service` on the device. Whichever fires second finds the D-Bus name
+taken and ends silently, so only one daemon ever runs.
+
+A headset paired straight over Bluetooth has no udev device to trigger on
+and starts at login like before. Autostart runs the installed binary, so
+reinstall after rebuilding — `jabraw --version` and the device information
+dialog both say which build is running.
 
 ## Use
 

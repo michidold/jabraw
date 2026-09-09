@@ -4,10 +4,17 @@ Documentation=file:///usr/share/doc/jabraw/README.md
 Documentation=https://github.com/michidold/jabraw
 PartOf=graphical-session.target
 After=graphical-session.target
+# 70-jabraw.rules zieht diese Unit, sobald ein Jabra-Gerät auftaucht. Derselbe
+# User-Manager läuft aber auch bei einem reinen SSH-Login: ohne Requisite=
+# stünde dort ein Daemon ohne Tray und hielte den D-Bus-Namen fest. Beim
+# Anmelden startet ohnehin der XDG-Autostart.
+Requisite=graphical-session.target
 
 [Service]
 Type=simple
-ExecStart=/usr/bin/jabraw
+# --quiet, weil Autostart und Geräte-Trigger beide feuern können: der zweite
+# Start endet dann wortlos statt mit einer Statusmeldung.
+ExecStart=/usr/bin/jabraw --quiet
 Restart=on-failure
 RestartSec=5
 

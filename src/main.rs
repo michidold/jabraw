@@ -306,6 +306,9 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
     // Monotonic runtime rather than wall clock: what matters are intervals.
     let started = std::time::Instant::now();
     let no_tray = std::env::args().any(|a| a == "--no-tray");
+    // Autostart and the udev-triggered unit can both fire for one session;
+    // only a start by hand should report on a daemon that already runs.
+    let quiet = std::env::args().any(|a| a == "--quiet");
     let conn = zbus::Connection::session().await?;
     // BlueZ lives on the system bus. Without it only the USB path remains.
     let system = zbus::Connection::system().await.ok();
@@ -329,6 +332,9 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
         // return value. Exit cleanly with 0 so autostart and systemd do not
         // treat it as a crash and restart.
         Ok(_) | Err(zbus::Error::NameTaken) => {
+            if quiet {
+                return Ok(());
+            }
             // Invoked from the menu entry while a daemon already runs: report
             // the current state instead of ending without a word.
             eprintln!("jabraw läuft bereits — zeige Status");

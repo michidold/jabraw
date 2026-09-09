@@ -6,9 +6,12 @@ if [ -x /bin/udevadm ] || [ -x /sbin/udevadm ]; then
     udevadm control --reload-rules || true
     udevadm trigger --subsystem-match=hidraw || true
 fi
-# Gestartet wird ausschliesslich ueber /etc/xdg/autostart. Die mitgelieferte
-# systemd-User-Unit ist die Alternative fuer Desktops ohne XDG-Autostart und
-# wird deshalb bewusst NICHT aktiviert - sonst laeuft der Daemon doppelt.
+# Gestartet wird beim Anmelden ueber /etc/xdg/autostart und waehrend einer
+# laufenden Sitzung ueber die udev-Regel, die jabraw.service an das Jabra-Geraet
+# haengt. Der obige Trigger startet den Daemon deshalb gleich mit, sofern ein
+# Geraet steckt - ohne Ab- und Anmelden. Die Unit wird bewusst NICHT aktiviert:
+# sie wird vom Geraet gezogen, und ein zweiter Daemon beendet sich ohnehin
+# sofort ueber den D-Bus-Namen.
 # Ohne aktualisierten Cache zeigt die Anwendungsuebersicht weiter das alte Symbol.
 if command -v gtk-update-icon-cache >/dev/null 2>&1; then
     gtk-update-icon-cache -qf /usr/share/icons/hicolor 2>/dev/null || true

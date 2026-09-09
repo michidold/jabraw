@@ -4,3 +4,9 @@
 # der Tag verpufft dann wirkungslos.
 KERNEL=="hidraw*", SUBSYSTEM=="hidraw", ATTRS{idVendor}=="0b0e", TAG+="uaccess"
 SUBSYSTEM=="input", KERNEL=="event*", ATTRS{idVendor}=="0b0e", TAG+="uaccess"
+
+# Startet den Daemon in der Sitzung, sobald ein Jabra-Gerät auftaucht: mit dem
+# systemd-Tag wird das Gerät zur Unit im User-Manager, die jabraw.service über
+# Wants= nachzieht. Ohne den Tag kennt systemd das Gerät nicht, und Wants=
+# greift nur, wenn das Gerät neu aktiv wird, nicht bei jedem change-Event.
+KERNEL=="hidraw*", SUBSYSTEM=="hidraw", ATTRS{idVendor}=="0b0e", TAG+="systemd", ENV{SYSTEMD_USER_WANTS}+="jabraw.service"

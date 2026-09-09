@@ -2,7 +2,7 @@
 Type=Application
 Name=Jabraw
 Comment=Medientasten und Tray-Menü für Jabra-Headsets
-Exec=/usr/bin/jabraw
+Exec=/usr/bin/jabraw --quiet
 Icon=jabraw
 Terminal=false
 Categories=AudioVideo;Audio;

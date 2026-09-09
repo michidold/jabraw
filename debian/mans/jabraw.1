@@ -42,6 +42,11 @@ This is how further buttons are identified.
 Run without a tray icon, handling keys only. Useful where no
 StatusNotifierItem host is present.
 .TP
+.B \-\-quiet
+Exit without a word when another instance already holds the D-Bus name,
+instead of reporting its state. Used by the autostart entry and the systemd
+unit, which can both fire for the same session.
+.TP
 .BI \-\-write\-icons " directory"
 Write the application icons as PNG files and exit. Used when building the
 package.
@@ -51,7 +56,13 @@ package.
 Grants the logged-in user access to the Jabra hidraw node through a uaccess
 ACL. The file has to sort before
 .IR 73\-seat\-late.rules ,
-which is what turns the tag into an ACL.
+which is what turns the tag into an ACL. The same file tags the device for
+systemd and pulls
+.B jabraw.service
+in through
+.BR SYSTEMD_USER_WANTS ,
+so plugging a Jabra device in starts the daemon in a session where it is not
+running yet.
 .TP
 .I /usr/share/wireplumber/wireplumber.conf.d/50\-jabraw\-no\-suspend.conf
 Keeps WirePlumber from suspending the Jabra audio nodes. Without it the
@@ -59,13 +70,24 @@ dongle tears down the USB audio stream while idle, and the next play takes
 long enough to look like a lost key press.
 .TP
 .I /etc/xdg/autostart/jabraw.desktop
-Starts jabraw on login. The systemd user unit shipped alongside is an
-alternative for environments without XDG autostart and is deliberately not
-enabled, since enabling both would start the daemon twice.
+Starts jabraw on login, which is also what covers a headset paired straight
+over Bluetooth: that one produces no udev device to trigger on.
+.TP
+.I /usr/lib/systemd/user/jabraw.service
+Started by the udev rule when a Jabra device appears. It is deliberately not
+enabled, since the device pulls it in and login is covered by XDG autostart;
+a second daemon would end immediately over the D\-Bus name anyway. A
+.B Requisite=
+on
+.B graphical\-session.target
+keeps it from starting outside a graphical session, so a plain SSH login
+raises no daemon without a tray.
 .SH EXIT STATUS
 Exits 0 when another instance already holds the D-Bus name
 .IR io.github.michidold.Jabraw ,
-after reporting the current state, so autostart does not treat it as a crash.
+after reporting the current state \(em or without a word under
+.B \-\-quiet
+\(em so autostart does not treat it as a crash.
 .SH BUGS
 Report bugs at https://github.com/michidold/jabraw/issues
 .SH AUTHOR
