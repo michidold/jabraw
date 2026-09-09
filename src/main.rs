@@ -49,6 +49,8 @@ const BATTERY_EVERY_N_TICKS: u32 = 15;
 const SINKS_EVERY_N_TICKS: u32 = 10;
 /// Ask BlueZ every 10 s; the HFP charge level only moves in coarse steps.
 const BLUETOOTH_EVERY_N_TICKS: u32 = 5;
+/// Longest wait between two RFCOMM connect attempts, in ticks: five minutes.
+const BLUETOOTH_RETRY_MAX: u32 = 150;
 
 /// Queue depth of the two channels. Bounded on purpose: the reader thread
 /// blocks on a full queue and the kernel drops what it cannot hand over, so a
@@ -392,6 +394,11 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
     let mut sinks: Vec<audio::Sink> = Vec::new();
     let mut bt: Option<bluetooth::BtDevice> = None;
     let mut bt_path: Option<String> = None;
+    // What the RFCOMM session has supplied so far, kept across ticks.
+    let mut bt_info = DeviceInfo::default();
+    let mut bt_level: Option<(u8, bool)> = None;
+    let mut bt_wait = BLUETOOTH_EVERY_N_TICKS;
+    let mut bt_next_try: u32 = 0;
     let mut session: Option<rfcomm::Session> = None;
     let mut seq: u8 = 0;
     // Matches replies to our own requests; the device also sends on this
@@ -484,68 +491,114 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
                 // point; the keys travel over AVRCP in that mode and the
                 // desktop passes them to MPRIS already.
                 if watched.is_empty() {
-                    if ticks.is_multiple_of(BLUETOOTH_EVERY_N_TICKS) {
+                    let slow = ticks.is_multiple_of(BLUETOOTH_EVERY_N_TICKS);
+                    if slow {
                         bt = match &system {
                             Some(c) => bluetooth::connected_jabra(c).await,
                             None => None,
                         };
-                        bt_path = bt.as_ref().map(|d| d.path.clone());
+                        let path = bt.as_ref().map(|d| d.path.clone());
+                        // Another device makes everything read so far stale.
+                        if path != bt_path {
+                            bt_info = DeviceInfo::default();
+                            bt_level = None;
+                            session = None;
+                            bt_wait = BLUETOOTH_EVERY_N_TICKS;
+                            bt_next_try = ticks;
+                        }
+                        bt_path = path;
                     }
-                    battery = bt.as_ref().and_then(|d| d.battery);
-                    // HFP carries no charging state; over RFCOMM it arrives
-                    // further down from the GNP reply.
-                    charging = false;
-                    info = match &bt {
-                        Some(d) => DeviceInfo {
-                            headset_name: Some(d.name.clone()),
-                            ..DeviceInfo::default()
-                        },
-                        None => DeviceInfo::default(),
-                    };
 
                     // GNP over RFCOMM is more precise than the coarse HFP
                     // indicator, and adds firmware and serial number.
                     if bt.is_none() {
                         session = None;
-                    } else if session.is_none() {
+                        bt_info = DeviceInfo::default();
+                        bt_level = None;
+                        // The next headset starts with a clean backoff.
+                        bt_wait = BLUETOOTH_EVERY_N_TICKS;
+                        bt_next_try = ticks;
+                    } else if session.is_none() && ticks >= bt_next_try {
                         if let (Some(c), Some(p)) = (&system, &bt_path) {
                             session = rfcomm::connect(c, p).await;
                             if session.is_some() {
                                 println!("GNP over RFCOMM established");
+                                bt_wait = BLUETOOTH_EVERY_N_TICKS;
+                            } else {
+                                // A headset without the serial profile would
+                                // otherwise cost the full timeout every round.
+                                bt_wait = (bt_wait * 2).min(BLUETOOTH_RETRY_MAX);
                             }
+                            bt_next_try = ticks.saturating_add(bt_wait);
                         }
                     }
                     if let Some(mut s) = session.take() {
-                        let out = tokio::task::spawn_blocking(move || {
-                            let d = gnp::DST_HEADSET;
-                            let name = s.read(d, gnp::CMD_IDENT, gnp::SUB_NAME);
-                            let ver = s.read(d, gnp::CMD_IDENT, gnp::SUB_VERSION);
-                            let ser = s.read(d, gnp::CMD_IDENT, gnp::SUB_SERIAL);
-                            let bat = s.read(d, gnp::CMD_STATUS, gnp::SUB_HS_BATTERY);
-                            (s, name, ver, ser, bat)
-                        })
-                        .await;
-                        if let Ok((s, name, ver, ser, bat)) = out {
-                            let any = name.is_some() || bat.is_some();
-                            if let Some(v) = name.as_deref().and_then(gnp::text) {
-                                info.headset_name = Some(v);
-                            }
-                            if let Some(v) = ver.as_deref().and_then(gnp::text) {
-                                info.headset_version = Some(v);
-                            }
-                            if let Some(v) = ser.as_deref().and_then(gnp::text) {
-                                info.headset_serial = Some(v);
-                            }
-                            if let Some(d) = bat.as_deref() {
-                                if let Some(p) = gnp::battery_percent(d) {
-                                    battery = Some(p);
+                        // Identity stays put while the session stands, and the
+                        // charge level moves in whole percent: asking for
+                        // either every two seconds buys nothing but timeouts.
+                        let ident = bt_info.headset_version.is_none();
+                        if !ident && !slow {
+                            session = Some(s);
+                        } else {
+                            let out = tokio::task::spawn_blocking(move || {
+                                let d = gnp::DST_HEADSET;
+                                let read = |s: &mut rfcomm::Session, c, sub| {
+                                    s.read(d, c, sub)
+                                };
+                                let name = ident
+                                    .then(|| read(&mut s, gnp::CMD_IDENT, gnp::SUB_NAME))
+                                    .flatten();
+                                let ver = ident
+                                    .then(|| read(&mut s, gnp::CMD_IDENT, gnp::SUB_VERSION))
+                                    .flatten();
+                                let ser = ident
+                                    .then(|| read(&mut s, gnp::CMD_IDENT, gnp::SUB_SERIAL))
+                                    .flatten();
+                                let bat = slow
+                                    .then(|| {
+                                        read(&mut s, gnp::CMD_STATUS, gnp::SUB_HS_BATTERY)
+                                    })
+                                    .flatten();
+                                (s, name, ver, ser, bat)
+                            })
+                            .await;
+                            if let Ok((s, name, ver, ser, bat)) = out {
+                                let any = name.is_some() || bat.is_some();
+                                if let Some(v) = name.as_deref().and_then(gnp::text) {
+                                    bt_info.headset_name = Some(v);
                                 }
-                                charging = gnp::battery_charging(d);
+                                if let Some(v) = ver.as_deref().and_then(gnp::text) {
+                                    bt_info.headset_version = Some(v);
+                                }
+                                if let Some(v) = ser.as_deref().and_then(gnp::text) {
+                                    bt_info.headset_serial = Some(v);
+                                }
+                                if let Some(d) = bat.as_deref() {
+                                    bt_level = gnp::battery_percent(d)
+                                        .map(|p| (p, gnp::battery_charging(d)));
+                                }
+                                // If everything stays silent, the link is dead.
+                                session = any.then_some(s);
                             }
-                            // If everything stays silent, the link is dead.
-                            session = any.then_some(s);
                         }
                     }
+
+                    info = match &bt {
+                        Some(d) => DeviceInfo {
+                            headset_name: bt_info
+                                .headset_name
+                                .clone()
+                                .or_else(|| Some(d.name.clone())),
+                            ..bt_info.clone()
+                        },
+                        None => DeviceInfo::default(),
+                    };
+                    // HFP carries no charging state and rounds the level; the
+                    // GNP figure wins wherever the session supplied one.
+                    (battery, charging) = match bt_level {
+                        Some((p, c)) => (Some(p), c),
+                        None => (bt.as_ref().and_then(|d| d.battery), false),
+                    };
                 }
                 ticks = ticks.wrapping_add(1);
                 if let Some(handle) = &tray {
