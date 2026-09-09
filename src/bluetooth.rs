@@ -50,6 +50,11 @@ pub async fn connected_jabra(conn: &zbus::Connection) -> Option<BtDevice> {
         if field::<bool>(dev, "Connected") != Some(true) {
             continue;
         }
+        // The RFCOMM session asks for an authenticated link, which an unpaired
+        // device cannot give.
+        if field::<bool>(dev, "Paired") != Some(true) {
+            continue;
+        }
         if !field::<String>(dev, "Modalias")
             .is_some_and(|m| m.starts_with(JABRA_VENDOR_PREFIX))
         {

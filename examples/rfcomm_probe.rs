@@ -48,7 +48,7 @@ impl Profile {
 
 /// Try the framing variants, each with nothing but `ident/version`.
 fn probe(fd: std::os::fd::OwnedFd) {
-    use std::io::{Read, Write};
+    use std::io::Write;
     let mut file = std::fs::File::from(fd);
     // Address 0x04 is the headset; 0x01 does not exist without a dongle and
     // answers requests with nack (type 254).
@@ -115,7 +115,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     opts.insert("Name", Value::from("jabraw"));
     opts.insert("Role", Value::from("client"));
     opts.insert("Channel", Value::from(0u16));
-    opts.insert("RequireAuthentication", Value::from(false));
+    opts.insert("RequireAuthentication", Value::from(true));
     opts.insert("RequireAuthorization", Value::from(false));
 
     let pm = zbus::Proxy::new(&conn, "org.bluez", "/org/bluez", "org.bluez.ProfileManager1").await?;

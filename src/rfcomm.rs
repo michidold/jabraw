@@ -11,7 +11,7 @@
 use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::os::fd::AsRawFd;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 use tokio::sync::Notify;
@@ -22,7 +22,8 @@ use crate::gnp;
 const SPP_UUID: &str = "00001101-0000-1000-8000-00805f9b34fb";
 const PROFILE_PATH: &str = "/de/hausnetzle/jabraw/spp";
 
-type Slot = Arc<Mutex<Option<std::os::fd::OwnedFd>>>;
+/// The socket BlueZ hands over, together with the device it belongs to.
+type Slot = Arc<Mutex<Option<(String, std::os::fd::OwnedFd)>>>;
 
 struct Profile {
     ready: Arc<Notify>,
@@ -33,11 +34,11 @@ struct Profile {
 impl Profile {
     async fn new_connection(
         &self,
-        _device: OwnedObjectPath,
+        device: OwnedObjectPath,
         fd: zbus::zvariant::OwnedFd,
         _props: HashMap<String, OwnedValue>,
     ) {
-        *self.slot.lock().unwrap() = Some(fd.into());
+        *self.slot.lock().unwrap() = Some((device.to_string(), fd.into()));
         self.ready.notify_one();
     }
 
@@ -159,22 +160,43 @@ fn readable(file: &std::fs::File, timeout: Duration) -> bool {
     unsafe { libc::poll(&mut p, 1, timeout.as_millis() as i32) > 0 }
 }
 
-/// Opens a session to the given BlueZ device path.
-pub async fn connect(conn: &zbus::Connection, device: &str) -> Option<Session> {
+/// Notify and slot of the registered profile object.
+///
+/// Registered once for the process: zbus keeps the interface first put at a
+/// path and answers a second `at()` with `false`, so a per-attempt profile
+/// would leave BlueZ handing the socket to the object nobody waits on — every
+/// reconnect after the first would then sit out its timeout.
+static PROFILE: OnceLock<(Arc<Notify>, Slot)> = OnceLock::new();
+
+async fn profile(conn: &zbus::Connection) -> Option<&'static (Arc<Notify>, Slot)> {
+    if let Some(p) = PROFILE.get() {
+        return Some(p);
+    }
     let ready = Arc::new(Notify::new());
     let slot: Slot = Arc::new(Mutex::new(None));
+    let profile = Profile {
+        ready: ready.clone(),
+        slot: slot.clone(),
+    };
+    match conn.object_server().at(PROFILE_PATH, profile).await {
+        Ok(true) => Some(PROFILE.get_or_init(|| (ready, slot))),
+        Ok(false) => {
+            eprintln!("{PROFILE_PATH} ist belegt — kein RFCOMM");
+            None
+        }
+        Err(e) => {
+            eprintln!("Profil nicht registrierbar: {e}");
+            None
+        }
+    }
+}
 
-    // On a second call the object is already there, which is not an error.
-    let _ = conn
-        .object_server()
-        .at(
-            PROFILE_PATH,
-            Profile {
-                ready: ready.clone(),
-                slot: slot.clone(),
-            },
-        )
-        .await;
+/// Opens a session to the given BlueZ device path.
+pub async fn connect(conn: &zbus::Connection, device: &str) -> Option<Session> {
+    let (ready, slot) = profile(conn).await?;
+    // A socket left over from an earlier attempt would be handed out as this
+    // one, along with any notification nobody collected.
+    slot.lock().unwrap().take();
 
     let pm = zbus::Proxy::new(conn, "org.bluez", "/org/bluez", "org.bluez.ProfileManager1")
         .await
@@ -184,7 +206,9 @@ pub async fn connect(conn: &zbus::Connection, device: &str) -> Option<Session> {
     opts.insert("Name", Value::from("jabraw"));
     opts.insert("Role", Value::from("client"));
     opts.insert("Channel", Value::from(0u16));
-    opts.insert("RequireAuthentication", Value::from(false));
+    // The headset is paired, so an authenticated link costs nothing and keeps
+    // the connection off BT_SECURITY_LOW.
+    opts.insert("RequireAuthentication", Value::from(true));
     opts.insert("RequireAuthorization", Value::from(false));
     // An already registered profile answers AlreadyExists, equally fine.
     let _ = pm
@@ -196,10 +220,17 @@ pub async fn connect(conn: &zbus::Connection, device: &str) -> Option<Session> {
         .ok()?;
     let _ = dev.call::<_, _, ()>("ConnectProfile", &(SPP_UUID,)).await;
 
-    tokio::time::timeout(Duration::from_secs(8), ready.notified())
-        .await
-        .ok()?;
-    let fd = slot.lock().unwrap().take()?;
+    let deadline = Instant::now() + Duration::from_secs(8);
+    let fd = loop {
+        let left = deadline.checked_duration_since(Instant::now())?;
+        tokio::time::timeout(left, ready.notified()).await.ok()?;
+        // The profile stays registered, so a socket for another device can
+        // turn up here; only the one asked for is this session.
+        match slot.lock().unwrap().take() {
+            Some((path, fd)) if path == device => break fd,
+            _ => continue,
+        }
+    };
     Some(Session {
         file: std::fs::File::from(fd),
         seq: 0x40,
