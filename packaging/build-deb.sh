@@ -38,12 +38,13 @@ install -Dm755 packaging/prerm    "$ROOT/DEBIAN/prerm"
 
 # Bibliotheksabhängigkeiten von dpkg-shlibdeps statt von Hand: libgcc-s1 fehlte
 # in der gepflegten Liste, und libc6 ohne Untergrenze lässt sich auf einem zu
-# alten System installieren und scheitert dann erst beim Start.
-SHLIBS=$(dpkg-shlibdeps -O --ignore-missing-info "$ROOT/usr/bin/jabraw" 2>/dev/null |
-    sed -n 's/^shlibs:Depends=//p')
+# alten System installieren und scheitert dann erst beim Start. Ohne
+# --ignore-missing-info und ohne Ausblenden der Meldungen: eine unvollständige
+# Liste soll den Bau abbrechen, nicht ein halbes Paket ergeben.
+SHLIBS=$(dpkg-shlibdeps -O "$ROOT/usr/bin/jabraw" | sed -n 's/^shlibs:Depends=//p')
 if [ -z "$SHLIBS" ]; then
-    echo "dpkg-shlibdeps lieferte nichts, bleibe bei libc6" >&2
-    SHLIBS="libc6"
+    echo "dpkg-shlibdeps nannte keine Abhängigkeiten" >&2
+    exit 1
 fi
 
 INSTALLED_SIZE=$(du -ks "$ROOT" | cut -f1)
