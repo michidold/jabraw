@@ -7,6 +7,10 @@
 //!
 //! Reading only. The same subcommands could be written, which would change
 //! device settings for good.
+//!
+//! What the values mean is not in the protocol. `doc/settings-sources.md` says
+//! where Jabra describes it, what that description answers and what it leaves
+//! open.
 
 use std::io::{Read, Write};
 use std::os::fd::AsRawFd;
@@ -17,63 +21,88 @@ use crate::gnp;
 /// Settings that mean something to a user. Other subcommands in the group are
 /// operational data — clock, feature masks, password fields — and do not belong
 /// in an overview.
-pub const SETTINGS: &[(u8, &str)] = &[
-    (0, "audioType"),
-    (1, "intellitoneLevel"),
-    (2, "touchAudioFeedback"),
-    (3, "ringerVolume"),
-    (5, "phonePresence"),
-    (8, "currentLanguage"),
-    (13, "micGain"),
-    (14, "rfPower"),
-    (19, "hsRinger"),
-    (21, "soundMode"),
-    (27, "powersave"),
-    (30, "muteReminderInterval"),
-    (33, "autoOpenHardphone"),
-    (36, "autoOpenSoftphone"),
-    (37, "musicMode"),
-    (39, "buttonFunction"),
-    (50, "singleCallConf"),
-    (51, "idlePowerSave"),
-    (53, "hsTouchSensor"),
-    (55, "ancGain"),
-    (57, "busylight"),
-    (58, "hsVoicePrompts"),
-    (59, "hsMotionSensor"),
-    (60, "autoRejectBgWaiting"),
-    (61, "ringtoneType"),
-    (62, "ringOnSecondIncomingCall"),
-    (63, "buttonSounds"),
-    (64, "autoPairing"),
-    (69, "acceptCallOnUndock"),
-    (74, "ctrlBusylight"),
-    (80, "undockOpenAudioLink"),
-    (82, "ancLed"),
-    (83, "ancMonitorLed"),
-    (84, "audioStreaming"),
-    (92, "buttonSwapFunction"),
-    (104, "sidetoneLevel"),
-    (112, "lowBatteryAudioNotifications"),
-    (114, "echoCancel"),
-    (120, "powerNap"),
-    (124, "dspSidetone"),
-    (125, "equalizer"),
-    (126, "equalizerEnable"),
-    (133, "sidetoneMute"),
-    (134, "hallSensor"),
-    (135, "anc"),
-    (138, "selectButtonFunction"),
-    (142, "autoPauseMusic"),
-    (143, "autoMuteCallAudio"),
-    (144, "inactivityInterval"),
-    (145, "autoAnswerCall"),
-    (146, "onHeadDetection"),
-    (147, "alwaysOnVoice"),
-    (149, "automaticSpeechRecognition"),
-    (152, "boomarmRotationAction"),
-    (153, "streamPriority"),
-    (188, "callAcceptedSound"),
+/// Whether a value may be read as a switch.
+///
+/// Jabra's device model files say which settings are On/Off and which are a
+/// choice from a longer list — see `doc/settings-sources.md`. Where they say
+/// choice, 0 and 1 are two of several values, and calling them off and on puts
+/// a wrong word on the screen: `soundMode` 0 is bass, not off.
+///
+/// Everything the model files do not cover stays `Switch`, which is the
+/// reading that fits two thirds of the values this device answers, and which
+/// holds wherever the files do confirm it.
+#[derive(Clone, Copy, PartialEq)]
+pub enum Kind {
+    Switch,
+    Choice,
+}
+
+pub struct Def {
+    pub sub: u8,
+    pub name: &'static str,
+    pub kind: Kind,
+}
+
+// One row per setting; rustfmt would give every field a line of its own and
+// turn the table into three hundred lines.
+#[rustfmt::skip]
+pub const SETTINGS: &[Def] = &[
+    Def { sub: 0, name: "audioType", kind: Kind::Switch },
+    Def { sub: 1, name: "intellitoneLevel", kind: Kind::Choice },
+    Def { sub: 2, name: "touchAudioFeedback", kind: Kind::Switch },
+    Def { sub: 3, name: "ringerVolume", kind: Kind::Switch },
+    Def { sub: 5, name: "phonePresence", kind: Kind::Switch },
+    Def { sub: 8, name: "currentLanguage", kind: Kind::Choice },
+    Def { sub: 13, name: "micGain", kind: Kind::Switch },
+    Def { sub: 14, name: "rfPower", kind: Kind::Choice },
+    Def { sub: 19, name: "hsRinger", kind: Kind::Switch },
+    Def { sub: 21, name: "soundMode", kind: Kind::Choice },
+    Def { sub: 27, name: "powersave", kind: Kind::Switch },
+    Def { sub: 30, name: "muteReminderInterval", kind: Kind::Choice },
+    Def { sub: 33, name: "autoOpenHardphone", kind: Kind::Switch },
+    Def { sub: 36, name: "autoOpenSoftphone", kind: Kind::Switch },
+    Def { sub: 37, name: "musicMode", kind: Kind::Switch },
+    Def { sub: 39, name: "buttonFunction", kind: Kind::Choice },
+    Def { sub: 50, name: "singleCallConf", kind: Kind::Switch },
+    Def { sub: 51, name: "idlePowerSave", kind: Kind::Switch },
+    Def { sub: 53, name: "hsTouchSensor", kind: Kind::Switch },
+    Def { sub: 55, name: "ancGain", kind: Kind::Switch },
+    Def { sub: 57, name: "busylight", kind: Kind::Switch },
+    Def { sub: 58, name: "hsVoicePrompts", kind: Kind::Choice },
+    Def { sub: 59, name: "hsMotionSensor", kind: Kind::Switch },
+    Def { sub: 60, name: "autoRejectBgWaiting", kind: Kind::Switch },
+    Def { sub: 61, name: "ringtoneType", kind: Kind::Switch },
+    Def { sub: 62, name: "ringOnSecondIncomingCall", kind: Kind::Switch },
+    Def { sub: 63, name: "buttonSounds", kind: Kind::Switch },
+    Def { sub: 64, name: "autoPairing", kind: Kind::Switch },
+    Def { sub: 69, name: "acceptCallOnUndock", kind: Kind::Switch },
+    Def { sub: 74, name: "ctrlBusylight", kind: Kind::Switch },
+    Def { sub: 80, name: "undockOpenAudioLink", kind: Kind::Switch },
+    Def { sub: 82, name: "ancLed", kind: Kind::Switch },
+    Def { sub: 83, name: "ancMonitorLed", kind: Kind::Switch },
+    Def { sub: 84, name: "audioStreaming", kind: Kind::Switch },
+    Def { sub: 92, name: "buttonSwapFunction", kind: Kind::Switch },
+    Def { sub: 104, name: "sidetoneLevel", kind: Kind::Choice },
+    Def { sub: 112, name: "lowBatteryAudioNotifications", kind: Kind::Switch },
+    Def { sub: 114, name: "echoCancel", kind: Kind::Switch },
+    Def { sub: 120, name: "powerNap", kind: Kind::Switch },
+    Def { sub: 124, name: "dspSidetone", kind: Kind::Switch },
+    Def { sub: 125, name: "equalizer", kind: Kind::Switch },
+    Def { sub: 126, name: "equalizerEnable", kind: Kind::Switch },
+    Def { sub: 133, name: "sidetoneMute", kind: Kind::Switch },
+    Def { sub: 134, name: "hallSensor", kind: Kind::Switch },
+    Def { sub: 135, name: "anc", kind: Kind::Switch },
+    Def { sub: 138, name: "selectButtonFunction", kind: Kind::Switch },
+    Def { sub: 142, name: "autoPauseMusic", kind: Kind::Switch },
+    Def { sub: 143, name: "autoMuteCallAudio", kind: Kind::Switch },
+    Def { sub: 144, name: "inactivityInterval", kind: Kind::Choice },
+    Def { sub: 145, name: "autoAnswerCall", kind: Kind::Switch },
+    Def { sub: 146, name: "onHeadDetection", kind: Kind::Switch },
+    Def { sub: 147, name: "alwaysOnVoice", kind: Kind::Switch },
+    Def { sub: 149, name: "automaticSpeechRecognition", kind: Kind::Switch },
+    Def { sub: 152, name: "boomarmRotationAction", kind: Kind::Choice },
+    Def { sub: 153, name: "streamPriority", kind: Kind::Switch },
+    Def { sub: 188, name: "callAcceptedSound", kind: Kind::Choice },
 ];
 
 /// Turns the replies of an RFCOMM sweep into display rows.
@@ -82,14 +111,29 @@ pub fn from_sweep(rows: Vec<(&'static str, Vec<u8>)>) -> Vec<Setting> {
         .map(|(name, value)| Setting {
             device: "Headset",
             name,
+            kind: kind_of(name),
             value,
         })
         .collect()
 }
 
+/// The list is short enough that a scan beats carrying a map around.
+fn kind_of(name: &str) -> Kind {
+    SETTINGS
+        .iter()
+        .find(|d| d.name == name)
+        .map_or(Kind::Switch, |d| d.kind)
+}
+
+/// Subcommand and name for a transport that has no use for the rest.
+pub fn subs() -> Vec<(u8, &'static str)> {
+    SETTINGS.iter().map(|d| (d.sub, d.name)).collect()
+}
+
 pub struct Setting {
     pub device: &'static str,
     pub name: &'static str,
+    pub kind: Kind,
     pub value: Vec<u8>,
 }
 
@@ -115,11 +159,11 @@ pub fn read_all(path: &str) -> std::io::Result<Vec<Setting>> {
 
 fn sweep(file: &mut std::fs::File, dst: u8, label: &'static str) -> std::io::Result<Vec<Setting>> {
     let mut pending = std::collections::HashMap::new();
-    for (i, (sub, name)) in SETTINGS.iter().enumerate() {
+    for (i, def) in SETTINGS.iter().enumerate() {
         // Avoid sequence 0 so it stands apart from an empty report.
         let seq = (i as u8).wrapping_add(1).max(1);
-        file.write_all(&gnp::read_request(dst, seq, gnp::CMD_CONFIG, *sub))?;
-        pending.insert(seq, *name);
+        file.write_all(&gnp::read_request(dst, seq, gnp::CMD_CONFIG, def.sub))?;
+        pending.insert(seq, def.name);
         std::thread::sleep(Duration::from_millis(4));
     }
 
@@ -144,6 +188,7 @@ fn sweep(file: &mut std::fs::File, dst: u8, label: &'static str) -> std::io::Res
             found.push(Setting {
                 device: label,
                 name,
+                kind: kind_of(name),
                 value: r.data.to_vec(),
             });
         }

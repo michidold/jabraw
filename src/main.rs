@@ -295,7 +295,7 @@ fn spawn_bt(mut s: rfcomm::Session, job: BtJob, device: String, tx: mpsc::Sender
                 (BtData::Battery(bat), !s.is_dead())
             }
             BtJob::Settings => {
-                let rows = s.sweep(d, gnp::CMD_CONFIG, config::SETTINGS);
+                let rows = s.sweep(d, gnp::CMD_CONFIG, &config::subs());
                 (BtData::Settings(rows), !s.is_dead())
             }
         };
@@ -351,7 +351,7 @@ async fn show_settings(settings: Vec<config::Setting>) {
     for item in &settings {
         args.push(item.device.to_string());
         args.push(item.name.to_string());
-        args.push(format_value(&item.value));
+        args.push(format_value(item.kind, &item.value));
     }
     match tokio::process::Command::new("zenity")
         .args(&args)
@@ -362,7 +362,14 @@ async fn show_settings(settings: Vec<config::Setting>) {
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
             let text: Vec<String> = settings
                 .iter()
-                .map(|i| format!("{} {}: {}", i.device, i.name, format_value(&i.value)))
+                .map(|i| {
+                    format!(
+                        "{} {}: {}",
+                        i.device,
+                        i.name,
+                        format_value(i.kind, &i.value)
+                    )
+                })
                 .collect();
             notify(&text.join("\n")).await;
         }
@@ -370,15 +377,19 @@ async fn show_settings(settings: Vec<config::Setting>) {
     }
 }
 
-/// Single bytes 0 and 1 are switches throughout; anything else stays raw,
-/// because the meaning differs per setting and is undocumented.
-fn format_value(data: &[u8]) -> String {
+/// A switch reads as off and on; a choice keeps its number.
+///
+/// Which byte stands for which choice is not in the model files, only that
+/// there are more than two of them — so `soundMode` 0 shows as 0 rather than
+/// as a confident "off" that happens to mean bass.
+fn format_value(kind: config::Kind, data: &[u8]) -> String {
     let s = strings();
-    match data {
-        [] => "—".to_string(),
-        [0] => s.off.to_string(),
-        [1] => s.on.to_string(),
-        [v] => v.to_string(),
+    match (kind, data) {
+        (_, []) => "—".to_string(),
+        (config::Kind::Choice, [v]) => v.to_string(),
+        (_, [0]) => s.off.to_string(),
+        (_, [1]) => s.on.to_string(),
+        (_, [v]) => v.to_string(),
         _ => data
             .iter()
             .map(|b| format!("{b:02x}"))
@@ -884,6 +895,25 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_choice_keeps_its_number() {
+        // soundMode 0 is bass. Whatever the locale calls "off", it is not that.
+        assert_eq!(super::format_value(super::config::Kind::Choice, &[0]), "0");
+        assert_ne!(super::format_value(super::config::Kind::Switch, &[0]), "0");
+    }
+
+    #[test]
+    fn the_settings_the_model_files_cover_are_marked() {
+        let by_name = |n| {
+            super::config::SETTINGS
+                .iter()
+                .find(|d| d.name == n)
+                .unwrap()
+        };
+        assert!(by_name("soundMode").kind == super::config::Kind::Choice);
+        assert!(by_name("hsRinger").kind == super::config::Kind::Switch);
+    }
+
     #[test]
     fn what_a_dialog_parses_as_markup_is_escaped() {
         assert_eq!(

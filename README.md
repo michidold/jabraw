@@ -92,6 +92,11 @@ byte 5   subcommand
 byte 6+  payload
 ```
 
+What a setting's value means is not part of that layout — the device answers a
+byte and nothing else. Jabra describes it elsewhere, partly in the open;
+[doc/settings-sources.md](doc/settings-sources.md) says where, and where that
+description stops.
+
 The layout was derived from the traffic Jabra's own SDK produces, so
 jabraw sends nothing the vendor tool does not send itself, and no
 proprietary library is involved at runtime. Over hidraw the packet sits
