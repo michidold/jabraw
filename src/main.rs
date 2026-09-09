@@ -10,6 +10,8 @@ mod rfcomm;
 mod tray;
 
 use std::collections::{HashMap, HashSet};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::time::Duration;
 
 use ksni::TrayMethods;
@@ -205,6 +207,25 @@ async fn show_device_info(info: &DeviceInfo, battery: Option<u8>, charging: bool
     notify(&text.replace('\n', " · ")).await;
 }
 
+/// Runs a dialog beside the main loop, one at a time.
+///
+/// The dialog tools return when the user closes the window, which would
+/// otherwise hold up key presses and every other menu entry for as long as it
+/// stands open.
+fn spawn_dialog<F>(open: &Arc<AtomicBool>, fut: F)
+where
+    F: std::future::Future<Output = ()> + Send + 'static,
+{
+    if open.swap(true, Ordering::SeqCst) {
+        return;
+    }
+    let open = open.clone();
+    tokio::spawn(async move {
+        fut.await;
+        open.store(false, Ordering::SeqCst);
+    });
+}
+
 async fn config_via_hidraw(path: String) -> Vec<config::Setting> {
     match tokio::task::spawn_blocking(move || config::read_all(&path)).await {
         Ok(Ok(v)) => v,
@@ -372,6 +393,7 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
     let mut pending: HashMap<u8, Pending> = HashMap::new();
     let mut ticks: u32 = 0;
 
+    let dialog_open = Arc::new(AtomicBool::new(false));
     let mut watched: HashSet<String> = HashSet::new();
     let mut names: HashMap<String, String> = HashMap::new();
     let mut warned: HashSet<String> = HashSet::new();
@@ -557,13 +579,22 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
                 Cmd::ToggleSourceMute => audio::toggle_mute(Target::Source).await,
                 Cmd::Volume(delta) => audio::change_volume(Target::Sink, delta).await,
                 Cmd::SetSink(id) => audio::set_default_sink(id).await,
-                Cmd::ShowInfo => show_device_info(&info, battery, charging).await,
+                Cmd::ShowInfo => {
+                    let (info, battery, charging) = (info.clone(), battery, charging);
+                    spawn_dialog(&dialog_open, async move {
+                        show_device_info(&info, battery, charging).await
+                    });
+                }
                 Cmd::ShowSettings => {
                     // Over hidraw when a dongle is plugged in, otherwise
                     // through the existing RFCOMM session.
                     if let Some(path) = watched.iter().next().cloned() {
-                        show_settings(config_via_hidraw(path).await).await;
+                        spawn_dialog(&dialog_open, async move {
+                            show_settings(config_via_hidraw(path).await).await
+                        });
                     } else if let Some(mut s) = session.take() {
+                        // The sweep has to give the session back, so it stays
+                        // here; only the dialog moves off the loop.
                         let out = tokio::task::spawn_blocking(move || {
                             let rows = s.sweep(
                                 gnp::DST_HEADSET,
@@ -575,7 +606,10 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
                         .await;
                         if let Ok((s, rows)) = out {
                             session = Some(s);
-                            show_settings(config::from_sweep(rows)).await;
+                            let rows = config::from_sweep(rows);
+                            spawn_dialog(&dialog_open, async move {
+                                show_settings(rows).await
+                            });
                         }
                     }
                 }

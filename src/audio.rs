@@ -6,6 +6,12 @@
 
 use serde_json::Value;
 use std::process::Stdio;
+use std::time::Duration;
+
+/// Ceiling for the helpers. `wpctl` answers in milliseconds and `pw-dump` in
+/// tens of them; one that hangs would otherwise stop the whole loop, since the
+/// tick waits for it.
+const TIMEOUT: Duration = Duration::from_secs(3);
 
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Sink {
@@ -57,26 +63,27 @@ impl Target {
 }
 
 async fn output(bin: &str, args: &[&str]) -> Option<String> {
-    let out = tokio::process::Command::new(bin)
+    let run = tokio::process::Command::new(bin)
         .args(args)
         .stderr(Stdio::null())
-        .output()
-        .await
-        .ok()?;
+        .kill_on_drop(true)
+        .output();
+    let out = tokio::time::timeout(TIMEOUT, run).await.ok()?.ok()?;
     out.status
         .success()
         .then(|| String::from_utf8_lossy(&out.stdout).into_owned())
 }
 
 async fn run(bin: &str, args: &[&str]) -> bool {
+    let status = tokio::process::Command::new(bin)
+        .args(args)
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .kill_on_drop(true)
+        .status();
     matches!(
-        tokio::process::Command::new(bin)
-            .args(args)
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status()
-            .await,
-        Ok(s) if s.success()
+        tokio::time::timeout(TIMEOUT, status).await,
+        Ok(Ok(s)) if s.success()
     )
 }
 
