@@ -1,9 +1,11 @@
 [Desktop Entry]
 Type=Application
 Name=Jabraw
-Comment=Status des Jabra-Headsets anzeigen, Daemon starten
+Comment=Show the Jabra headset's status and start the daemon
+Comment[de]=Status des Jabra-Headsets anzeigen, Daemon starten
 Exec=/usr/bin/jabraw
 Icon=jabraw
 Terminal=false
 Categories=AudioVideo;Audio;
-Keywords=Jabra;Headset;Kopfhörer;Evolve;
+Keywords=Jabra;Headset;Evolve;Media keys;
+Keywords[de]=Jabra;Headset;Kopfhörer;Evolve;Medientasten;

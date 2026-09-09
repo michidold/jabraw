@@ -1,7 +1,8 @@
 [Desktop Entry]
 Type=Application
 Name=Jabraw
-Comment=Medientasten und Tray-Menü für Jabra-Headsets
+Comment=Media keys and tray menu for Jabra headsets
+Comment[de]=Medientasten und Tray-Menü für Jabra-Headsets
 Exec=/usr/bin/jabraw --quiet
 Icon=jabraw
 Terminal=false
