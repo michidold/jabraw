@@ -9,7 +9,7 @@ ARCH=$(dpkg --print-architecture)
 PKG="jabraw_${VERSION}_${ARCH}"
 ROOT="target/deb/$PKG"
 
-cargo build --release
+cargo build --release --locked
 
 rm -rf "$ROOT"
 install -Dm755 target/release/jabraw "$ROOT/usr/bin/jabraw"
@@ -36,6 +36,16 @@ install -Dm644 README.md "$ROOT/usr/share/doc/jabraw/README.md"
 install -Dm755 packaging/postinst "$ROOT/DEBIAN/postinst"
 install -Dm755 packaging/prerm    "$ROOT/DEBIAN/prerm"
 
+# Bibliotheksabhängigkeiten von dpkg-shlibdeps statt von Hand: libgcc-s1 fehlte
+# in der gepflegten Liste, und libc6 ohne Untergrenze lässt sich auf einem zu
+# alten System installieren und scheitert dann erst beim Start.
+SHLIBS=$(dpkg-shlibdeps -O --ignore-missing-info "$ROOT/usr/bin/jabraw" 2>/dev/null |
+    sed -n 's/^shlibs:Depends=//p')
+if [ -z "$SHLIBS" ]; then
+    echo "dpkg-shlibdeps lieferte nichts, bleibe bei libc6" >&2
+    SHLIBS="libc6"
+fi
+
 INSTALLED_SIZE=$(du -ks "$ROOT" | cut -f1)
 cat > "$ROOT/DEBIAN/control" <<EOF
 Package: jabraw
@@ -45,7 +55,7 @@ Priority: optional
 Architecture: $ARCH
 Maintainer: Michael Dold <michidold@users.noreply.github.com>
 Homepage: https://github.com/michidold/jabraw
-Depends: libc6, udev
+Depends: $SHLIBS, udev
 Recommends: pipewire, wireplumber
 Suggests: gnome-shell-ubuntu-extensions | gnome-shell-extension-appindicator
 Installed-Size: $INSTALLED_SIZE
