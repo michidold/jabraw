@@ -10,3 +10,9 @@ SUBSYSTEM=="input", KERNEL=="event*", ATTRS{idVendor}=="0b0e", TAG+="uaccess"
 # Wants= nachzieht. Ohne den Tag kennt systemd das Gerät nicht, und Wants=
 # greift nur, wenn das Gerät neu aktiv wird, nicht bei jedem change-Event.
 KERNEL=="hidraw*", SUBSYSTEM=="hidraw", ATTRS{idVendor}=="0b0e", TAG+="systemd", ENV{SYSTEMD_USER_WANTS}+="jabraw.service"
+
+# Dasselbe für ein direkt gekoppeltes Headset. Ohne Dongle gibt es kein hidraw,
+# aber bluetoothd legt beim Verbinden ein Eingabegerät für die AVRCP-Tasten an —
+# Bus 0005 ist Bluetooth, Vendor 0067 ist Jabras SIG-Kennung. Es entsteht bei
+# jeder Verbindung neu, womit Wants= jedes Mal greift.
+SUBSYSTEM=="input", KERNEL=="event*", ATTRS{id/bustype}=="0005", ATTRS{id/vendor}=="0067", TAG+="systemd", ENV{SYSTEMD_USER_WANTS}+="jabraw.service"

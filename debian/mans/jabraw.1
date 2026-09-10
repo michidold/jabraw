@@ -62,7 +62,8 @@ systemd and pulls
 in through
 .BR SYSTEMD_USER_WANTS ,
 so plugging a Jabra device in starts the daemon in a session where it is not
-running yet.
+running yet. A headset paired over Bluetooth is caught the same way, through
+the input device bluetoothd creates for its AVRCP keys.
 .TP
 .I /usr/share/wireplumber/wireplumber.conf.d/50\-jabraw\-no\-suspend.conf
 Keeps WirePlumber from suspending the Jabra audio nodes. Without it the
@@ -70,8 +71,8 @@ dongle tears down the USB audio stream while idle, and the next play takes
 long enough to look like a lost key press.
 .TP
 .I /etc/xdg/autostart/jabraw.desktop
-Starts jabraw on login, which is also what covers a headset paired straight
-over Bluetooth: that one produces no udev device to trigger on.
+Starts jabraw on login, for the case where a device is already there and no
+udev event will announce it.
 .TP
 .I /usr/lib/systemd/user/jabraw.service
 Started by the udev rule when a Jabra device appears. It is deliberately not

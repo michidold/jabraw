@@ -37,8 +37,9 @@ while a session is already running, through the udev rule that hangs
 `jabraw.service` on the device. Whichever fires second finds the D-Bus name
 taken and ends silently, so only one daemon ever runs.
 
-A headset paired straight over Bluetooth has no udev device to trigger on
-and starts at login like before. Autostart runs the installed binary, so
+A headset paired straight over Bluetooth is covered too: connecting it makes
+bluetoothd create an input device for the AVRCP keys, and the same rule hangs
+the daemon on that. Autostart runs the installed binary, so
 reinstall after rebuilding — `jabraw --version` and the device information
 dialog both say which build is running.
 
