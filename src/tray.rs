@@ -24,6 +24,12 @@ pub enum Cmd {
     ShowSettings,
     Refresh,
     SetSink(u32),
+    /// A value picked in the settings dialog, on its way to the device.
+    SetSetting {
+        name: &'static str,
+        dst: u8,
+        raw: u8,
+    },
     Quit,
 }
 

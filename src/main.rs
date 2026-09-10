@@ -48,6 +48,13 @@ enum BtJob {
     Ident,
     Battery,
     Settings,
+    /// A value on its way to the device, with the sentence to report about it.
+    Write {
+        dst: u8,
+        sub: u8,
+        data: Vec<u8>,
+        told: String,
+    },
 }
 
 enum BtData {
@@ -59,6 +66,7 @@ enum BtData {
     },
     Battery(Option<Vec<u8>>),
     Settings(Vec<(&'static str, Vec<u8>)>),
+    Written(Option<gnp::Ack>, String),
 }
 
 struct BtResult {
@@ -261,6 +269,17 @@ async fn show_device_info(info: &DeviceInfo, battery: Option<u8>, charging: bool
     notify(&text.replace('\n', " · ")).await;
 }
 
+/// Says what became of a write, in one line.
+async fn report_write(ok: bool, told: &str, ack: Option<gnp::Ack>) {
+    let s = strings();
+    let text = match (ok, ack) {
+        (true, _) => told.to_string(),
+        (_, Some(gnp::Ack::Nak(code))) => format!("{told}: {} ({code:#04x})", s.refused),
+        _ => format!("{told}: {}", s.no_answer),
+    };
+    notify(&text).await;
+}
+
 /// Runs a dialog beside the main loop, one at a time.
 ///
 /// The dialog tools return when the user closes the window, which would
@@ -298,6 +317,15 @@ fn spawn_bt(mut s: rfcomm::Session, job: BtJob, device: String, tx: mpsc::Sender
                 let rows = s.sweep(d, gnp::CMD_CONFIG, &config::subs());
                 (BtData::Settings(rows), !s.is_dead())
             }
+            BtJob::Write {
+                dst,
+                sub,
+                data,
+                told,
+            } => {
+                let ack = s.write(dst, gnp::CMD_CONFIG, sub, &data);
+                (BtData::Written(ack, told), !s.is_dead())
+            }
         };
         // Only a broken socket ends the session. Which subcommands a device
         // answers differs per model, and silence is one of the answers.
@@ -323,8 +351,11 @@ async fn config_via_hidraw(path: String) -> Vec<config::Setting> {
     }
 }
 
-/// Overview of the device settings as a table.
-async fn show_settings(settings: Vec<config::Setting>) {
+/// Overview of the device settings as a table, and the way to change one.
+///
+/// The first column carries the identifier and stays hidden; zenity gives the
+/// selected row back through it, which is what the write needs.
+async fn show_settings(settings: Vec<config::Setting>, tx: mpsc::Sender<Cmd>) {
     let s = strings();
     if settings.is_empty() {
         notify(s.no_settings).await;
@@ -337,8 +368,13 @@ async fn show_settings(settings: Vec<config::Setting>) {
         "--list".to_string(),
         "--title=Jabraw".to_string(),
         format!("--text={}", s.settings.trim_end_matches(" …")),
-        "--width=520".to_string(),
+        "--width=560".to_string(),
         "--height=560".to_string(),
+        "--hide-column=1".to_string(),
+        "--print-column=ALL".to_string(),
+        "--separator=|".to_string(),
+        "--column".to_string(),
+        "id".to_string(),
         // No empty column title: zenity 4 then returns the first row
         // immediately instead of showing the dialog.
         "--column".to_string(),
@@ -349,16 +385,18 @@ async fn show_settings(settings: Vec<config::Setting>) {
         s.value.to_string(),
     ];
     for item in &settings {
+        args.push(item.name.to_string());
         args.push(item.device.to_string());
         args.push(item.label.to_string());
         args.push(format_value(item.kind, item.values, item.raw, &item.value));
     }
-    match tokio::process::Command::new("zenity")
+    let picked = match tokio::process::Command::new("zenity")
         .args(&args)
-        .status()
+        .output()
         .await
     {
-        Ok(_) => {}
+        Ok(out) if out.status.success() => String::from_utf8_lossy(&out.stdout).trim().to_string(),
+        Ok(_) => return,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
             let text: Vec<String> = settings
                 .iter()
@@ -372,9 +410,58 @@ async fn show_settings(settings: Vec<config::Setting>) {
                 })
                 .collect();
             notify(&text.join("\n")).await;
+            return;
         }
-        Err(e) => eprintln!("zenity failed: {e}"),
+        Err(e) => return eprintln!("zenity failed: {e}"),
+    };
+
+    let mut fields = picked.split('|');
+    let (Some(name), Some(device)) = (fields.next(), fields.next()) else {
+        return;
+    };
+    let Some(def) = config::SETTINGS.iter().find(|d| d.name == name) else {
+        return;
+    };
+    // A value that shares its byte with the neighbours would need the rest of
+    // that byte carried over, which is not established.
+    if def.values.is_empty() || def.mask != 0 {
+        notify(&format!("{}: {}", def.label(), s.only_shown)).await;
+        return;
     }
+
+    let mut pick = vec![
+        "--list".to_string(),
+        "--title=Jabraw".to_string(),
+        format!("--text={} — {}", def.label(), s.choose_value),
+        "--column".to_string(),
+        s.value.to_string(),
+    ];
+    for c in def.values {
+        pick.push(c.label().to_string());
+    }
+    let chosen = match tokio::process::Command::new("zenity")
+        .args(&pick)
+        .output()
+        .await
+    {
+        Ok(out) if out.status.success() => String::from_utf8_lossy(&out.stdout).trim().to_string(),
+        _ => return,
+    };
+    let Some(choice) = def.values.iter().find(|c| c.label() == chosen) else {
+        return;
+    };
+    let dst = if device == "Dongle" {
+        gnp::DST_DONGLE
+    } else {
+        gnp::DST_HEADSET
+    };
+    let _ = tx
+        .send(Cmd::SetSetting {
+            name: def.name,
+            dst,
+            raw: choice.raw,
+        })
+        .await;
 }
 
 /// A named value wins; a switch reads as off and on; anything else keeps its
@@ -728,8 +815,9 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
                     // Over hidraw when a dongle is plugged in, otherwise
                     // through the existing RFCOMM session.
                     if let Some(path) = watched.iter().next().cloned() {
+                        let tx = cmd_tx.clone();
                         spawn_dialog(&dialog_open, async move {
-                            show_settings(config_via_hidraw(path).await).await
+                            show_settings(config_via_hidraw(path).await, tx).await
                         });
                     } else if !bt_busy {
                         // The sweep goes through the same job as the reads;
@@ -745,6 +833,32 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
                 // Refresh the device list when the menu opens, so the rare
                 // polling interval cannot leave stale entries.
                 Cmd::Refresh => sinks = audio::list_sinks().await,
+                Cmd::SetSetting { name, dst, raw } => {
+                    let Some(def) = config::def_of(name) else {
+                        continue;
+                    };
+                    let told = format!("{} {} {}", def.label(), strings().set_to,
+                        def.values.iter().find(|c| c.raw == raw)
+                            .map_or_else(|| raw.to_string(), |c| c.label().to_string()));
+                    if let Some(path) = watched.iter().next().cloned() {
+                        tokio::spawn(async move {
+                            let out = tokio::task::spawn_blocking(move || {
+                                config::write(&path, dst, def, raw)
+                            })
+                            .await;
+                            report_write(matches!(out, Ok(Ok(Some(gnp::Ack::Ok)))), &told, out.ok().and_then(|r| r.ok()).flatten()).await;
+                        });
+                    } else if !bt_busy {
+                        if let Some(p) = bt_path.clone() {
+                            if let Some(s) = session.take() {
+                                let mut data = def.request.to_vec();
+                                data.push(raw);
+                                bt_busy = true;
+                                spawn_bt(s, BtJob::Write { dst, sub: def.sub, data, told }, p, bt_tx.clone());
+                            }
+                        }
+                    }
+                }
                 Cmd::Quit => {
                     if let Some(handle) = &tray {
                         handle.shutdown().await;
@@ -793,10 +907,14 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
                                 .map(|p| (p, gnp::battery_charging(d)));
                         }
                     }
+                    BtData::Written(ack, told) => {
+                        report_write(ack == Some(gnp::Ack::Ok), &told, ack).await;
+                    }
                     BtData::Settings(rows) => {
                         let rows = config::from_sweep(rows);
+                        let tx = cmd_tx.clone();
                         spawn_dialog(&dialog_open, async move {
-                            show_settings(rows).await
+                            show_settings(rows, tx).await
                         });
                     }
                 }

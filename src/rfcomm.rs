@@ -116,6 +116,26 @@ impl Session {
         self.dead
     }
 
+    /// Sends a value and waits for the device to answer for it.
+    pub fn write(&mut self, dst: u8, cmd: u8, sub: u8, data: &[u8]) -> Option<gnp::Ack> {
+        let seq = self.next_seq();
+        if self
+            .file
+            .write_all(&gnp::write_body(dst, seq, cmd, sub, data))
+            .is_err()
+        {
+            self.dead = true;
+            return None;
+        }
+        let deadline = Instant::now() + Duration::from_millis(2000);
+        while let Some(pkt) = self.next_packet(deadline) {
+            if let Some(ack) = gnp::write_reply(&pkt, dst, seq) {
+                return Some(ack);
+            }
+        }
+        None
+    }
+
     /// Sends every request first and collects the replies afterwards.
     ///
     /// Asking one after another would be unusably slow at 56 settings and
@@ -169,14 +189,18 @@ impl Session {
     }
 
     /// A complete packet from the stream, cut on the length field.
+    ///
+    /// Five bytes is the floor rather than the six a read reply needs: an
+    /// accepted write answers with one byte less.
     fn next_packet(&mut self, deadline: Instant) -> Option<Vec<u8>> {
+        const SHORTEST: usize = 5;
         loop {
-            if self.buf.len() >= gnp::HEADER_LEN {
+            if self.buf.len() >= SHORTEST {
                 let len = (self.buf[3] & 0x3F) as usize;
-                if len >= gnp::HEADER_LEN && self.buf.len() >= len {
+                if len >= SHORTEST && self.buf.len() >= len {
                     return Some(self.buf.drain(..len).collect());
                 }
-                if len < gnp::HEADER_LEN {
+                if len < SHORTEST {
                     // Unusable length field: the stream is out of step.
                     self.buf.clear();
                     return None;

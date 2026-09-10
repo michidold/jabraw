@@ -28,7 +28,11 @@ pub const DST_DONGLE: u8 = 0x01;
 pub const DST_HEADSET: u8 = 0x04;
 const SRC_PC: u8 = 0x00;
 const TYPE_READ: u8 = 1;
+const TYPE_WRITE: u8 = 2;
 const TYPE_RESPONSE: u8 = 3;
+/// Message type of an accepted write, and of a refusal with a reason byte.
+const ACK: u8 = 0xff;
+const NAK: u8 = 0xfe;
 
 pub const CMD_STATUS: u8 = 18;
 pub const SUB_HS_BATTERY: u8 = 2;
@@ -64,6 +68,56 @@ pub fn read_request(dst: u8, seq: u8, cmd: u8, sub: u8, data: &[u8]) -> [u8; 1 +
     out
 }
 
+/// A write packet: the same header with the command type, carrying the value.
+pub fn write_body(dst: u8, seq: u8, cmd: u8, sub: u8, data: &[u8]) -> Vec<u8> {
+    let data = &data[..data.len().min(REPORT_SIZE - HEADER_LEN)];
+    let len = HEADER_LEN + data.len();
+    let mut out = vec![dst, SRC_PC, seq, (TYPE_WRITE << 6) | len as u8, cmd, sub];
+    out.extend_from_slice(data);
+    out
+}
+
+pub fn write_request(dst: u8, seq: u8, cmd: u8, sub: u8, data: &[u8]) -> [u8; 1 + REPORT_SIZE] {
+    let body = write_body(dst, seq, cmd, sub, data);
+    let mut out = [0u8; 1 + REPORT_SIZE];
+    out[0] = REPORT_ID;
+    out[1..1 + body.len()].copy_from_slice(&body);
+    out
+}
+
+/// What the device made of a write.
+#[derive(Debug, PartialEq)]
+pub enum Ack {
+    Ok,
+    /// Refused, with the device's reason.
+    Nak(u8),
+}
+
+/// The answer to a write, if this packet is one.
+///
+/// Matched on sender and sequence number. Not on the destination byte: over
+/// hidraw the device answers to 0x00, over RFCOMM to 0x09, and neither tells
+/// this packet apart from another. Five bytes are enough for an acceptance,
+/// one less than a read reply needs, which is why this does not go through
+/// [`parse_body`].
+pub fn write_reply(body: &[u8], dst: u8, seq: u8) -> Option<Ack> {
+    if body.len() < 5 || body[1] != dst || body[2] != seq {
+        return None;
+    }
+    if body[3] >> 6 != TYPE_RESPONSE {
+        return None;
+    }
+    let len = (body[3] & 0x3F) as usize;
+    if len < 5 || len > body.len() {
+        return None;
+    }
+    match body[4] {
+        ACK => Some(Ack::Ok),
+        NAK if len >= 6 => Some(Ack::Nak(body[5])),
+        _ => None,
+    }
+}
+
 pub struct Response<'a> {
     /// Sender: says whether the dongle or the headset answered.
     pub src: u8,
@@ -76,6 +130,11 @@ pub struct Response<'a> {
 /// Splits an incoming report 5. `report` starts with the report id.
 pub fn parse(report: &[u8]) -> Option<Response<'_>> {
     parse_body(report.strip_prefix(&[REPORT_ID])?)
+}
+
+/// [`write_reply`] for a report that still carries its report id.
+pub fn write_ack(report: &[u8], dst: u8, seq: u8) -> Option<Ack> {
+    write_reply(report.strip_prefix(&[REPORT_ID])?, dst, seq)
 }
 
 /// Splits a packet without transport wrapping, as it arrives over RFCOMM.
@@ -176,6 +235,28 @@ mod tests {
         let mut report = vec![REPORT_ID];
         report.extend_from_slice(&body);
         assert!(parse(&report).is_some());
+    }
+
+    #[rustfmt::skip]
+    #[test]
+    fn a_write_says_command_in_the_type_bits() {
+        let w = write_body(DST_HEADSET, 7, CMD_CONFIG, 21, &[1]);
+        assert_eq!(w, vec![DST_HEADSET, 0, 7, (2 << 6) | 7, CMD_CONFIG, 21, 1]);
+    }
+
+    #[rustfmt::skip]
+    #[test]
+    fn an_acceptance_is_five_bytes_and_still_counts() {
+        // One shorter than a read reply. The first byte is the address the
+        // device answers to, 0x00 over hidraw and 0x09 over RFCOMM.
+        let ok = [0, DST_HEADSET, 7, (TYPE_RESPONSE << 6) | 5, 0xff];
+        assert_eq!(write_reply(&ok, DST_HEADSET, 7), Some(Ack::Ok));
+        let rfcomm = [0x09, DST_HEADSET, 7, (TYPE_RESPONSE << 6) | 5, 0xff];
+        assert_eq!(write_reply(&rfcomm, DST_HEADSET, 7), Some(Ack::Ok));
+        // Another sequence number is another packet.
+        assert_eq!(write_reply(&ok, DST_HEADSET, 8), None);
+        let nak = [0, DST_HEADSET, 7, (TYPE_RESPONSE << 6) | 6, 0xfe, 0x23];
+        assert_eq!(write_reply(&nak, DST_HEADSET, 7), Some(Ack::Nak(0x23)));
     }
 
     #[test]

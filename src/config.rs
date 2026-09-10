@@ -386,6 +386,7 @@ pub fn from_sweep(rows: Vec<(&'static str, Vec<u8>)>) -> Vec<Setting> {
             let def = def_of(name);
             Setting {
                 device: "Headset",
+                name,
                 label: def.map_or(name, |d| d.label()),
                 kind: def.map_or(Kind::Switch, |d| d.kind),
                 values: def.map_or(&[][..], |d| d.values),
@@ -400,7 +401,7 @@ pub fn from_sweep(rows: Vec<(&'static str, Vec<u8>)>) -> Vec<Setting> {
 }
 
 /// The list is short enough that a scan beats carrying a map around.
-fn def_of(name: &str) -> Option<&'static Def> {
+pub fn def_of(name: &str) -> Option<&'static Def> {
     SETTINGS.iter().find(|d| d.name == name)
 }
 
@@ -420,6 +421,9 @@ pub fn subs() -> Vec<(u8, &'static str, &'static [u8])> {
 
 pub struct Setting {
     pub device: &'static str,
+    /// Jabra's identifier, carried through the dialog to name the setting a
+    /// write is meant for.
+    pub name: &'static str,
     pub label: &'static str,
     pub kind: Kind,
     pub values: &'static [Choice],
@@ -485,6 +489,7 @@ fn sweep(file: &mut std::fs::File, dst: u8, label: &'static str) -> std::io::Res
             let def = def_of(name);
             found.push(Setting {
                 device: label,
+                name,
                 label: def.map_or(name, |d| d.label()),
                 kind: def.map_or(Kind::Switch, |d| d.kind),
                 values: def.map_or(&[][..], |d| d.values),
@@ -495,6 +500,47 @@ fn sweep(file: &mut std::fs::File, dst: u8, label: &'static str) -> std::io::Res
     }
     found.sort_by_key(|s| s.label);
     Ok(found)
+}
+
+/// Changes one setting and waits for the device to answer for it.
+///
+/// Only where the value has a byte to itself: a setting that shares one with
+/// its neighbours would need the rest of that byte carried over, and that is
+/// not established here. Blocking — belongs in `spawn_blocking`.
+pub fn write(path: &str, dst: u8, def: &Def, raw: u8) -> std::io::Result<Option<gnp::Ack>> {
+    if def.mask != 0 {
+        return Ok(None);
+    }
+    let mut file = std::fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(path)?;
+    let seq = 0x21;
+    let mut payload = def.request.to_vec();
+    payload.push(raw);
+    file.write_all(&gnp::write_request(
+        dst,
+        seq,
+        gnp::CMD_CONFIG,
+        def.sub,
+        &payload,
+    ))?;
+
+    let deadline = Instant::now() + Duration::from_millis(2000);
+    let mut buf = [0u8; 64];
+    while Instant::now() < deadline {
+        if !readable(&file, deadline - Instant::now()) {
+            break;
+        }
+        let n = match file.read(&mut buf) {
+            Ok(n) => n,
+            Err(_) => break,
+        };
+        if let Some(ack) = gnp::write_ack(&buf[..n], dst, seq) {
+            return Ok(Some(ack));
+        }
+    }
+    Ok(None)
 }
 
 /// `poll(2)` on the descriptor, so a silent device does not block.
