@@ -1,3 +1,12 @@
+jabraw (0.4.6-1) unstable; urgency=medium
+
+  * Show the values of seven settings under their names instead of a number —
+    auto sleep 12 reads as two hours, voice prompts 2 as off. The byte for each
+    value comes from jabridge under Apache-2.0; see doc/settings-sources.md and
+    debian/copyright.
+
+ -- Michael Dold <michidold@users.noreply.github.com>  Thu, 10 Sep 2026 09:12:00 +0200
+
 jabraw (0.4.5-1) unstable; urgency=medium
 
   * Reconnect over Bluetooth. BlueZ answers ConnectProfile with success while
