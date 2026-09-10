@@ -1,3 +1,12 @@
+jabraw (0.4.8-1) unstable; urgency=medium
+
+  * Change a setting from the dialog, where the values are established: pick a
+    row, pick a value, and the daemon writes it over whichever transport is
+    there and reports what the device answered. Settings whose value shares a
+    byte with its neighbours are refused rather than guessed at.
+
+ -- Michael Dold <michidold@users.noreply.github.com>  Thu, 10 Sep 2026 12:30:00 +0200
+
 jabraw (0.4.7-1) unstable; urgency=medium
 
   * Read the settings that address a sub-item through a payload byte, carry
