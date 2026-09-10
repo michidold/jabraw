@@ -278,6 +278,14 @@ async fn handshake(conn: &zbus::Connection, device: &str) -> Option<Session> {
     let dev = zbus::Proxy::new(conn, "org.bluez", device, "org.bluez.Device1")
         .await
         .ok()?;
+    // A profile BlueZ still counts as connected from an earlier session makes
+    // ConnectProfile answer Ok and hand over nothing, and the wait below then
+    // sits out its budget for a socket that never arrives. Tearing it down
+    // first is what makes BlueZ produce a new one; with nothing connected the
+    // call fails and that is fine.
+    let _ = dev
+        .call::<_, _, ()>("DisconnectProfile", &(SPP_UUID,))
+        .await;
     let _ = dev.call::<_, _, ()>("ConnectProfile", &(SPP_UUID,)).await;
 
     let deadline = Instant::now() + Duration::from_secs(8);
