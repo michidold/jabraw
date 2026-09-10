@@ -1,3 +1,12 @@
+jabraw (0.4.7-1) unstable; urgency=medium
+
+  * Read the settings that address a sub-item through a payload byte, carry
+    their value at an index other than the first, or occupy only part of a
+    byte. Five more settings show their value by name: ringtone volume,
+    ringtone, boom arm rotation, button function and the DSP sidetone level.
+
+ -- Michael Dold <michidold@users.noreply.github.com>  Thu, 10 Sep 2026 09:47:00 +0200
+
 jabraw (0.4.6-1) unstable; urgency=medium
 
   * Show the values of seven settings under their names instead of a number —
