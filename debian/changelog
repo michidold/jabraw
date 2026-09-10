@@ -1,3 +1,15 @@
+jabraw (0.4.5-1) unstable; urgency=medium
+
+  * Reconnect over Bluetooth. BlueZ answers ConnectProfile with success while
+    it still counts the profile as connected, and hands over no socket, so
+    every attempt after the first sat out its timeout. The profile is torn
+    down first now.
+  * Start the daemon when a headset connects over Bluetooth, through the input
+    device bluetoothd creates for its AVRCP keys. Only the dongle triggered
+    that before.
+
+ -- Michael Dold <michidold@users.noreply.github.com>  Thu, 10 Sep 2026 08:05:00 +0200
+
 jabraw (0.4.4-1) unstable; urgency=medium
 
   * Show the device settings under a readable name in English and German,
