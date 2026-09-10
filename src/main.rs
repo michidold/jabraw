@@ -351,7 +351,7 @@ async fn show_settings(settings: Vec<config::Setting>) {
     for item in &settings {
         args.push(item.device.to_string());
         args.push(item.label.to_string());
-        args.push(format_value(item.kind, &item.value));
+        args.push(format_value(item.kind, item.values, &item.value));
     }
     match tokio::process::Command::new("zenity")
         .args(&args)
@@ -367,7 +367,7 @@ async fn show_settings(settings: Vec<config::Setting>) {
                         "{} {}: {}",
                         i.device,
                         i.label,
-                        format_value(i.kind, &i.value)
+                        format_value(i.kind, i.values, &i.value)
                     )
                 })
                 .collect();
@@ -377,13 +377,15 @@ async fn show_settings(settings: Vec<config::Setting>) {
     }
 }
 
-/// A switch reads as off and on; a choice keeps its number.
-///
-/// Which byte stands for which choice is not in the model files, only that
-/// there are more than two of them — so `soundMode` 0 shows as 0 rather than
-/// as a confident "off" that happens to mean bass.
-fn format_value(kind: config::Kind, data: &[u8]) -> String {
+/// A named value wins; a switch reads as off and on; anything else keeps its
+/// number rather than being dressed up as something it may not be.
+fn format_value(kind: config::Kind, values: &[config::Choice], data: &[u8]) -> String {
     let s = strings();
+    if let [v] = data {
+        if let Some(c) = values.iter().find(|c| c.raw == *v) {
+            return c.label().to_string();
+        }
+    }
     match (kind, data) {
         (_, []) => "—".to_string(),
         (config::Kind::Choice, [v]) => v.to_string(),
@@ -896,10 +898,31 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
 #[cfg(test)]
 mod tests {
     #[test]
-    fn a_choice_keeps_its_number() {
-        // soundMode 0 is bass. Whatever the locale calls "off", it is not that.
-        assert_eq!(super::format_value(super::config::Kind::Choice, &[0]), "0");
-        assert_ne!(super::format_value(super::config::Kind::Switch, &[0]), "0");
+    fn a_choice_without_names_keeps_its_number() {
+        let none: &[super::config::Choice] = &[];
+        assert_eq!(
+            super::format_value(super::config::Kind::Choice, none, &[0]),
+            "0"
+        );
+        assert_ne!(
+            super::format_value(super::config::Kind::Switch, none, &[0]),
+            "0"
+        );
+    }
+
+    #[test]
+    fn a_named_value_wins_over_both() {
+        // soundMode 0 is Normal, not off and not "0".
+        let d = super::config::SETTINGS
+            .iter()
+            .find(|d| d.name == "soundMode")
+            .unwrap();
+        assert_eq!(
+            super::format_value(d.kind, d.values, &[0]),
+            d.values[0].label()
+        );
+        // A byte the table does not name falls back to the number.
+        assert_eq!(super::format_value(d.kind, d.values, &[9]), "9");
     }
 
     #[test]

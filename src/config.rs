@@ -18,9 +18,97 @@ use std::time::{Duration, Instant};
 
 use crate::gnp;
 
-/// Settings that mean something to a user. Other subcommands in the group are
-/// operational data — clock, feature masks, password fields — and do not belong
-/// in an overview.
+/// A value a setting can take, and the byte the device uses for it.
+pub struct Choice {
+    pub raw: u8,
+    pub label: &'static str,
+    pub label_de: &'static str,
+}
+
+impl Choice {
+    pub fn label(&self) -> &'static str {
+        if crate::i18n::german() {
+            self.label_de
+        } else {
+            self.label
+        }
+    }
+}
+
+// The byte for each value comes from jabridge (github.com/Watchdog0x/jLink,
+// Apache-2.0), whose table was established against hardware. Only the settings
+// it addresses without a prefix byte or a bit mask are taken over, because
+// those are the ones our plain read returns as a single byte. See
+// doc/settings-sources.md.
+#[rustfmt::skip]
+const AUDIO_PROTECTION: &[Choice] = &[
+    Choice { raw: 0, label: "Basic PeakStop", label_de: "Basic PeakStop" },
+    Choice { raw: 1, label: "Level 1", label_de: "Stufe 1" },
+    Choice { raw: 2, label: "Level 2", label_de: "Stufe 2" },
+    Choice { raw: 3, label: "Level 3", label_de: "Stufe 3" },
+    Choice { raw: 4, label: "Level 4", label_de: "Stufe 4" },
+    Choice { raw: 5, label: "G616", label_de: "G616" },
+];
+
+#[rustfmt::skip]
+const SOUND_MODE: &[Choice] = &[
+    Choice { raw: 0, label: "Normal", label_de: "Normal" },
+    Choice { raw: 1, label: "Bass", label_de: "Bass" },
+    Choice { raw: 2, label: "Treble", label_de: "Höhen" },
+];
+
+#[rustfmt::skip]
+const MUTE_REMINDER: &[Choice] = &[
+    Choice { raw: 0, label: "Off", label_de: "Aus" },
+    Choice { raw: 10, label: "10 seconds", label_de: "10 Sekunden" },
+    Choice { raw: 20, label: "20 seconds", label_de: "20 Sekunden" },
+    Choice { raw: 30, label: "30 seconds", label_de: "30 Sekunden" },
+    Choice { raw: 40, label: "40 seconds", label_de: "40 Sekunden" },
+    Choice { raw: 50, label: "50 seconds", label_de: "50 Sekunden" },
+    Choice { raw: 60, label: "60 seconds", label_de: "60 Sekunden" },
+];
+
+#[rustfmt::skip]
+const VOICE_PROMPTS: &[Choice] = &[
+    Choice { raw: 0, label: "Tones", label_de: "Töne" },
+    Choice { raw: 1, label: "Voice", label_de: "Sprache" },
+    Choice { raw: 2, label: "Off", label_de: "Aus" },
+];
+
+// Negative levels as a signed byte: -9 dB arrives as 0xf7.
+#[rustfmt::skip]
+const SIDETONE_LEVEL: &[Choice] = &[
+    Choice { raw: 0xf7, label: "-9 dB", label_de: "-9 dB" },
+    Choice { raw: 0xfa, label: "-6 dB", label_de: "-6 dB" },
+    Choice { raw: 0xfc, label: "-4 dB", label_de: "-4 dB" },
+    Choice { raw: 0xfd, label: "-3 dB", label_de: "-3 dB" },
+    Choice { raw: 0xfe, label: "-2 dB", label_de: "-2 dB" },
+    Choice { raw: 0, label: "0 dB", label_de: "0 dB" },
+    Choice { raw: 2, label: "+2 dB", label_de: "+2 dB" },
+    Choice { raw: 3, label: "+3 dB", label_de: "+3 dB" },
+    Choice { raw: 4, label: "+4 dB", label_de: "+4 dB" },
+    Choice { raw: 6, label: "+6 dB", label_de: "+6 dB" },
+];
+
+#[rustfmt::skip]
+const AUTO_SLEEP: &[Choice] = &[
+    Choice { raw: 0, label: "Never", label_de: "Nie" },
+    Choice { raw: 3, label: "30 minutes", label_de: "30 Minuten" },
+    Choice { raw: 6, label: "1 hour", label_de: "1 Stunde" },
+    Choice { raw: 12, label: "2 hours", label_de: "2 Stunden" },
+    Choice { raw: 24, label: "4 hours", label_de: "4 Stunden" },
+    Choice { raw: 48, label: "8 hours", label_de: "8 Stunden" },
+    Choice { raw: 72, label: "12 hours", label_de: "12 Stunden" },
+    Choice { raw: 96, label: "16 hours", label_de: "16 Stunden" },
+];
+
+#[rustfmt::skip]
+const CALL_ACCEPTED: &[Choice] = &[
+    Choice { raw: 0, label: "Sound effects", label_de: "Klangeffekte" },
+    Choice { raw: 1, label: "Voice prompts", label_de: "Sprachansagen" },
+    Choice { raw: 2, label: "Off", label_de: "Aus" },
+];
+
 /// Whether a value may be read as a switch.
 ///
 /// Jabra's device model files say which settings are On/Off and which are a
@@ -48,6 +136,8 @@ pub struct Def {
     /// than guessing at what the setting does.
     pub label: &'static str,
     pub label_de: &'static str,
+    /// Empty where the byte for each value is not established.
+    pub values: &'static [Choice],
 }
 
 impl Def {
@@ -60,122 +150,181 @@ impl Def {
     }
 }
 
+/// Settings that mean something to a user. Other subcommands in the group are
+/// operational data — clock, feature masks, password fields — and do not belong
+/// in an overview.
 // One row per setting; rustfmt would give every field a line of its own and
 // turn the table into three hundred lines.
 #[rustfmt::skip]
 pub const SETTINGS: &[Def] = &[
     Def { sub: 0, name: "audioType", kind: Kind::Switch,
-          label: "Audio type", label_de: "Audiotyp" },
+          label: "Audio type", label_de: "Audiotyp",
+          values: &[] },
     Def { sub: 1, name: "intellitoneLevel", kind: Kind::Choice,
-          label: "Hearing protection", label_de: "Gehörschutz" },
+          label: "Hearing protection", label_de: "Gehörschutz",
+          values: AUDIO_PROTECTION },
     Def { sub: 2, name: "touchAudioFeedback", kind: Kind::Switch,
-          label: "Touch feedback sounds", label_de: "Töne bei Berührung" },
+          label: "Touch feedback sounds", label_de: "Töne bei Berührung",
+          values: &[] },
     Def { sub: 3, name: "ringerVolume", kind: Kind::Switch,
-          label: "Ringtone volume", label_de: "Klingellautstärke" },
+          label: "Ringtone volume", label_de: "Klingellautstärke",
+          values: &[] },
     Def { sub: 5, name: "phonePresence", kind: Kind::Switch,
-          label: "Phone presence", label_de: "Telefon-Präsenz" },
+          label: "Phone presence", label_de: "Telefon-Präsenz",
+          values: &[] },
     Def { sub: 8, name: "currentLanguage", kind: Kind::Choice,
-          label: "Device language", label_de: "Gerätesprache" },
+          label: "Device language", label_de: "Gerätesprache",
+          values: &[] },
     Def { sub: 13, name: "micGain", kind: Kind::Switch,
-          label: "Microphone gain", label_de: "Mikrofonverstärkung" },
+          label: "Microphone gain", label_de: "Mikrofonverstärkung",
+          values: &[] },
     Def { sub: 14, name: "rfPower", kind: Kind::Choice,
-          label: "Wireless range", label_de: "Funkreichweite" },
+          label: "Wireless range", label_de: "Funkreichweite",
+          values: &[] },
     Def { sub: 19, name: "hsRinger", kind: Kind::Switch,
-          label: "Ringtone in headset", label_de: "Klingelton im Headset" },
+          label: "Ringtone in headset", label_de: "Klingelton im Headset",
+          values: &[] },
     Def { sub: 21, name: "soundMode", kind: Kind::Choice,
-          label: "Sound mode", label_de: "Klangmodus" },
+          label: "Sound mode", label_de: "Klangmodus",
+          values: SOUND_MODE },
     Def { sub: 27, name: "powersave", kind: Kind::Switch,
-          label: "Power saving", label_de: "Energiesparen" },
+          label: "Power saving", label_de: "Energiesparen",
+          values: &[] },
     Def { sub: 30, name: "muteReminderInterval", kind: Kind::Choice,
-          label: "Mute reminder", label_de: "Stummschalt-Erinnerung" },
+          label: "Mute reminder", label_de: "Stummschalt-Erinnerung",
+          values: MUTE_REMINDER },
     Def { sub: 33, name: "autoOpenHardphone", kind: Kind::Switch,
-          label: "Open desk phone line automatically", label_de: "Tischtelefon-Leitung automatisch öffnen" },
+          label: "Open desk phone line automatically", label_de: "Tischtelefon-Leitung automatisch öffnen",
+          values: &[] },
     Def { sub: 36, name: "autoOpenSoftphone", kind: Kind::Switch,
-          label: "Open softphone line automatically", label_de: "Softphone-Leitung automatisch öffnen" },
+          label: "Open softphone line automatically", label_de: "Softphone-Leitung automatisch öffnen",
+          values: &[] },
     Def { sub: 37, name: "musicMode", kind: Kind::Switch,
-          label: "Music mode", label_de: "Musikmodus" },
+          label: "Music mode", label_de: "Musikmodus",
+          values: &[] },
     Def { sub: 39, name: "buttonFunction", kind: Kind::Choice,
-          label: "Button function", label_de: "Tastenbelegung" },
+          label: "Button function", label_de: "Tastenbelegung",
+          values: &[] },
     Def { sub: 50, name: "singleCallConf", kind: Kind::Switch,
-          label: "Single call", label_de: "Einzelanruf" },
+          label: "Single call", label_de: "Einzelanruf",
+          values: &[] },
     Def { sub: 51, name: "idlePowerSave", kind: Kind::Switch,
-          label: "Power saving when idle", label_de: "Energiesparen im Leerlauf" },
+          label: "Power saving when idle", label_de: "Energiesparen im Leerlauf",
+          values: &[] },
     Def { sub: 53, name: "hsTouchSensor", kind: Kind::Switch,
-          label: "Touch sensor", label_de: "Berührungssensor" },
+          label: "Touch sensor", label_de: "Berührungssensor",
+          values: &[] },
     Def { sub: 55, name: "ancGain", kind: Kind::Switch,
-          label: "Noise cancellation strength", label_de: "Stärke der Geräuschunterdrückung" },
+          label: "Noise cancellation strength", label_de: "Stärke der Geräuschunterdrückung",
+          values: &[] },
     Def { sub: 57, name: "busylight", kind: Kind::Switch,
-          label: "Busylight", label_de: "Besetztlicht" },
+          label: "Busylight", label_de: "Besetztlicht",
+          values: &[] },
     Def { sub: 58, name: "hsVoicePrompts", kind: Kind::Choice,
-          label: "Audio announcements", label_de: "Sprachansagen" },
+          label: "Audio announcements", label_de: "Sprachansagen",
+          values: VOICE_PROMPTS },
     Def { sub: 59, name: "hsMotionSensor", kind: Kind::Switch,
-          label: "Motion sensor", label_de: "Bewegungssensor" },
+          label: "Motion sensor", label_de: "Bewegungssensor",
+          values: &[] },
     Def { sub: 60, name: "autoRejectBgWaiting", kind: Kind::Switch,
-          label: "Reject waiting calls automatically", label_de: "Wartende Anrufe automatisch abweisen" },
+          label: "Reject waiting calls automatically", label_de: "Wartende Anrufe automatisch abweisen",
+          values: &[] },
     Def { sub: 61, name: "ringtoneType", kind: Kind::Switch,
-          label: "Ringtone", label_de: "Klingelton" },
+          label: "Ringtone", label_de: "Klingelton",
+          values: &[] },
     Def { sub: 62, name: "ringOnSecondIncomingCall", kind: Kind::Switch,
-          label: "Ring on a second call", label_de: "Klingeln bei zweitem Anruf" },
+          label: "Ring on a second call", label_de: "Klingeln bei zweitem Anruf",
+          values: &[] },
     Def { sub: 63, name: "buttonSounds", kind: Kind::Switch,
-          label: "Button sounds", label_de: "Tastentöne" },
+          label: "Button sounds", label_de: "Tastentöne",
+          values: &[] },
     Def { sub: 64, name: "autoPairing", kind: Kind::Switch,
-          label: "Automatic pairing", label_de: "Automatisches Koppeln" },
+          label: "Automatic pairing", label_de: "Automatisches Koppeln",
+          values: &[] },
     Def { sub: 69, name: "acceptCallOnUndock", kind: Kind::Switch,
-          label: "Accept a call on undocking", label_de: "Anruf beim Entnehmen annehmen" },
+          label: "Accept a call on undocking", label_de: "Anruf beim Entnehmen annehmen",
+          values: &[] },
     Def { sub: 74, name: "ctrlBusylight", kind: Kind::Switch,
-          label: "Busylight control", label_de: "Besetztlicht-Steuerung" },
+          label: "Busylight control", label_de: "Besetztlicht-Steuerung",
+          values: &[] },
     Def { sub: 80, name: "undockOpenAudioLink", kind: Kind::Switch,
-          label: "Open the audio link on undocking", label_de: "Audioverbindung beim Entnehmen öffnen" },
+          label: "Open the audio link on undocking", label_de: "Audioverbindung beim Entnehmen öffnen",
+          values: &[] },
     Def { sub: 82, name: "ancLed", kind: Kind::Switch,
-          label: "Noise cancellation indicator", label_de: "Anzeige der Geräuschunterdrückung" },
+          label: "Noise cancellation indicator", label_de: "Anzeige der Geräuschunterdrückung",
+          values: &[] },
     Def { sub: 83, name: "ancMonitorLed", kind: Kind::Switch,
-          label: "Monitor mode indicator", label_de: "Anzeige des Monitor-Modus" },
+          label: "Monitor mode indicator", label_de: "Anzeige des Monitor-Modus",
+          values: &[] },
     Def { sub: 84, name: "audioStreaming", kind: Kind::Switch,
-          label: "Audio streaming", label_de: "Audio-Streaming" },
+          label: "Audio streaming", label_de: "Audio-Streaming",
+          values: &[] },
     Def { sub: 92, name: "buttonSwapFunction", kind: Kind::Switch,
-          label: "Swapped button functions", label_de: "Vertauschte Tastenbelegung" },
+          label: "Swapped button functions", label_de: "Vertauschte Tastenbelegung",
+          values: &[] },
     Def { sub: 104, name: "sidetoneLevel", kind: Kind::Choice,
-          label: "Sidetone level", label_de: "Mithörton-Pegel" },
+          label: "Sidetone level", label_de: "Mithörton-Pegel",
+          values: SIDETONE_LEVEL },
     Def { sub: 112, name: "lowBatteryAudioNotifications", kind: Kind::Switch,
-          label: "Low battery announcement", label_de: "Ansage bei schwachem Akku" },
+          label: "Low battery announcement", label_de: "Ansage bei schwachem Akku",
+          values: &[] },
     Def { sub: 114, name: "echoCancel", kind: Kind::Switch,
-          label: "Echo cancellation", label_de: "Echounterdrückung" },
+          label: "Echo cancellation", label_de: "Echounterdrückung",
+          values: &[] },
     Def { sub: 120, name: "powerNap", kind: Kind::Switch,
-          label: "Power nap", label_de: "Power Nap" },
+          label: "Power nap", label_de: "Power Nap",
+          values: &[] },
     Def { sub: 124, name: "dspSidetone", kind: Kind::Switch,
-          label: "Sidetone", label_de: "Mithörton" },
+          label: "Sidetone", label_de: "Mithörton",
+          values: &[] },
     Def { sub: 125, name: "equalizer", kind: Kind::Switch,
-          label: "Equalizer", label_de: "Equalizer" },
+          label: "Equalizer", label_de: "Equalizer",
+          values: &[] },
     Def { sub: 126, name: "equalizerEnable", kind: Kind::Switch,
-          label: "Equalizer on", label_de: "Equalizer aktiv" },
+          label: "Equalizer on", label_de: "Equalizer aktiv",
+          values: &[] },
     Def { sub: 133, name: "sidetoneMute", kind: Kind::Switch,
-          label: "Sidetone while muted", label_de: "Mithörton bei Stummschaltung" },
+          label: "Sidetone while muted", label_de: "Mithörton bei Stummschaltung",
+          values: &[] },
     Def { sub: 134, name: "hallSensor", kind: Kind::Switch,
-          label: "Hall sensor", label_de: "Hall-Sensor" },
+          label: "Hall sensor", label_de: "Hall-Sensor",
+          values: &[] },
     Def { sub: 135, name: "anc", kind: Kind::Switch,
-          label: "Active noise cancellation", label_de: "Aktive Geräuschunterdrückung" },
+          label: "Active noise cancellation", label_de: "Aktive Geräuschunterdrückung",
+          values: &[] },
     Def { sub: 138, name: "selectButtonFunction", kind: Kind::Switch,
-          label: "Select button function", label_de: "Belegung der Auswahltaste" },
+          label: "Select button function", label_de: "Belegung der Auswahltaste",
+          values: &[] },
     Def { sub: 142, name: "autoPauseMusic", kind: Kind::Switch,
-          label: "Pause music when taken off", label_de: "Musik beim Absetzen pausieren" },
+          label: "Pause music when taken off", label_de: "Musik beim Absetzen pausieren",
+          values: &[] },
     Def { sub: 143, name: "autoMuteCallAudio", kind: Kind::Switch,
-          label: "Mute call audio automatically", label_de: "Gesprächston automatisch stummschalten" },
+          label: "Mute call audio automatically", label_de: "Gesprächston automatisch stummschalten",
+          values: &[] },
     Def { sub: 144, name: "inactivityInterval", kind: Kind::Choice,
-          label: "Auto sleep after", label_de: "Ruhezustand nach" },
+          label: "Auto sleep after", label_de: "Ruhezustand nach",
+          values: AUTO_SLEEP },
     Def { sub: 145, name: "autoAnswerCall", kind: Kind::Switch,
-          label: "Answer calls automatically", label_de: "Anrufe automatisch annehmen" },
+          label: "Answer calls automatically", label_de: "Anrufe automatisch annehmen",
+          values: &[] },
     Def { sub: 146, name: "onHeadDetection", kind: Kind::Switch,
-          label: "On-head detection", label_de: "Trageerkennung" },
+          label: "On-head detection", label_de: "Trageerkennung",
+          values: &[] },
     Def { sub: 147, name: "alwaysOnVoice", kind: Kind::Switch,
-          label: "Always-on voice assistant", label_de: "Sprachassistent immer aktiv" },
+          label: "Always-on voice assistant", label_de: "Sprachassistent immer aktiv",
+          values: &[] },
     Def { sub: 149, name: "automaticSpeechRecognition", kind: Kind::Switch,
-          label: "Speech recognition", label_de: "Spracherkennung" },
+          label: "Speech recognition", label_de: "Spracherkennung",
+          values: &[] },
     Def { sub: 152, name: "boomarmRotationAction", kind: Kind::Choice,
-          label: "Boom arm rotation", label_de: "Mikrofonarm-Drehung" },
+          label: "Boom arm rotation", label_de: "Mikrofonarm-Drehung",
+          values: &[] },
     Def { sub: 153, name: "streamPriority", kind: Kind::Switch,
-          label: "Stream priority", label_de: "Stream-Priorität" },
+          label: "Stream priority", label_de: "Stream-Priorität",
+          values: &[] },
     Def { sub: 188, name: "callAcceptedSound", kind: Kind::Choice,
-          label: "Call accepted sound", label_de: "Ton bei angenommenem Anruf" },
+          label: "Call accepted sound", label_de: "Ton bei angenommenem Anruf",
+          values: CALL_ACCEPTED },
 ];
 
 /// Turns the replies of an RFCOMM sweep into display rows.
@@ -188,6 +337,7 @@ pub fn from_sweep(rows: Vec<(&'static str, Vec<u8>)>) -> Vec<Setting> {
                 device: "Headset",
                 label: def.map_or(name, |d| d.label()),
                 kind: def.map_or(Kind::Switch, |d| d.kind),
+                values: def.map_or(&[][..], |d| d.values),
                 value,
             }
         })
@@ -211,6 +361,7 @@ pub struct Setting {
     pub device: &'static str,
     pub label: &'static str,
     pub kind: Kind,
+    pub values: &'static [Choice],
     pub value: Vec<u8>,
 }
 
@@ -267,6 +418,7 @@ fn sweep(file: &mut std::fs::File, dst: u8, label: &'static str) -> std::io::Res
                 device: label,
                 label: def.map_or(name, |d| d.label()),
                 kind: def.map_or(Kind::Switch, |d| d.kind),
+                values: def.map_or(&[][..], |d| d.values),
                 value: r.data.to_vec(),
             });
         }

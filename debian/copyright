@@ -7,6 +7,15 @@ Files: *
 Copyright: 2026 Michael Dold
 License: GPL-3.0-or-later
 
+Files: src/config.rs
+Copyright: 2026 Michael Dold
+License: GPL-3.0-or-later
+Comment: The byte that each setting value uses was taken from jabridge,
+ https://github.com/Watchdog0x/jLink, Copyright the jabridge authors, under
+ Apache-2.0, which permits use in a GPL-3 work. Only those mappings were taken,
+ written out in this project's own form and translated; no code was copied.
+ See doc/settings-sources.md.
+
 Files: debian/*
 Copyright: 2026 Michael Dold
 License: GPL-3.0-or-later

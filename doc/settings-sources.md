@@ -48,11 +48,10 @@ They give the type and the names of the possible values. They do **not** give
 the byte that stands for each name. `voicePrompts` is off, tones or voice, the
 headset answers `02`, and which of the three that is stays open.
 
-That is the whole reason `Kind` in `src/config.rs` only separates a switch from
-a choice rather than translating the values: what these files establish is that
-a setting is *not* a switch, which is enough to stop calling `soundMode` 0
-"off" when it means bass. Naming the value needs the byte, and the byte is not
-in here.
+This is what `Kind` in `src/config.rs` rests on: the files establish that a
+setting is *not* a switch, which is enough to stop calling `soundMode` 0 "off".
+Naming the value needs the byte, and the byte is not in here — it comes from
+the section below.
 
 ## The other service — answers, but not readably
 
@@ -78,13 +77,30 @@ setting in a tool that can write it, read it again. The model files make this
 cheap, because they say how many values to expect and what they are called —
 the experiment only has to find out which byte is which.
 
-## Prior art
+## Value names, from prior art
 
-[jabridge](https://github.com/Watchdog0x/jLink) (Apache-2.0) solves the same
-problem for its own settings by keeping raw byte and value name side by side in
-a hand-maintained table; see its `choice_settings.go`. Its earlier version
-wrapped Jabra's proprietary Linux library instead, which is the other way to
-get labels: let the vendor's runtime decrypt them.
+[jabridge](https://github.com/Watchdog0x/jLink) (Apache-2.0) closes the gap the
+other way: it keeps raw byte and value name side by side in a table established
+against hardware, in `cmd/jabridge/choice_settings.go`. Apache-2.0 permits use
+in a GPL-3 work, so the mappings for seven settings are taken over here rather
+than measured again — `intellitoneLevel`, `soundMode`, `muteReminderInterval`,
+`hsVoicePrompts`, `sidetoneLevel`, `inactivityInterval` and `callAcceptedSound`.
+
+Only those seven, and the reason is mechanical: jabridge addresses several
+settings with a prefix byte in the request or merges the value into a bit mask,
+and a plain read like ours then returns something else than the value alone.
+Where its definition needs neither, our single byte and its raw value are the
+same thing. The rest of its table stays where it is until our read matches it.
+
+What was taken are the byte-to-name mappings, written out in this project's own
+form and translated; no code was copied. `debian/copyright` records it.
+
+One correction it brought: the model files list `soundMode` as bass, treble and
+normal, and reading an order into that list would have made 0 mean bass. It is
+Normal. The order in the model files is not a value assignment.
+
+Its earlier version wrapped Jabra's proprietary Linux library instead, which is
+the other way to get labels: let the vendor's runtime decrypt them.
 
 ## A caution
 
