@@ -21,7 +21,7 @@ use audio::Target;
 use hid::{Action, Msg};
 use i18n::strings;
 use std::io::Write;
-use tray::{Cmd, HeadsetTray};
+use tray::{Change, Cmd, HeadsetTray};
 
 /// What is known about dongle and headset. Both sit behind the same hidraw
 /// node and are told apart by the GNP destination address.
@@ -47,14 +47,12 @@ enum Pending {
 enum BtJob {
     Ident,
     Battery,
-    Settings,
-    /// A value on its way to the device, with the sentence to report about it.
-    Write {
-        dst: u8,
-        sub: u8,
-        data: Vec<u8>,
-        told: String,
+    /// `edit` says whether the table or the form follows.
+    Settings {
+        edit: bool,
     },
+    /// Values on their way to the device, each with the sentence to report.
+    Write(Vec<(u8, &'static config::Def, u8, String)>),
 }
 
 enum BtData {
@@ -65,8 +63,8 @@ enum BtData {
         ser: Option<Vec<u8>>,
     },
     Battery(Option<Vec<u8>>),
-    Settings(Vec<(&'static str, Vec<u8>)>),
-    Written(Option<gnp::Ack>, String),
+    Settings(Vec<(&'static str, Vec<u8>)>, bool),
+    Written(Vec<(String, Option<gnp::Ack>)>),
 }
 
 struct BtResult {
@@ -269,15 +267,31 @@ async fn show_device_info(info: &DeviceInfo, battery: Option<u8>, charging: bool
     notify(&text.replace('\n', " · ")).await;
 }
 
-/// Says what became of a write, in one line.
-async fn report_write(ok: bool, told: &str, ack: Option<gnp::Ack>) {
+/// Says what became of the writes, one line each.
+async fn report_writes(done: Vec<(String, Option<gnp::Ack>)>) {
     let s = strings();
-    let text = match (ok, ack) {
-        (true, _) => told.to_string(),
-        (_, Some(gnp::Ack::Nak(code))) => format!("{told}: {} ({code:#04x})", s.refused),
-        _ => format!("{told}: {}", s.no_answer),
-    };
-    notify(&text).await;
+    let lines: Vec<String> = done
+        .into_iter()
+        .map(|(told, ack)| match ack {
+            Some(gnp::Ack::Ok) => told,
+            Some(gnp::Ack::Nak(code)) => format!("{told}: {} ({code:#04x})", s.refused),
+            None => format!("{told}: {}", s.no_answer),
+        })
+        .collect();
+    notify(&lines.join("\n")).await;
+}
+
+/// The sentence a change is reported with.
+fn told_about(def: &config::Def, raw: u8) -> String {
+    format!(
+        "{} {} {}",
+        def.label(),
+        strings().set_to,
+        def.values
+            .iter()
+            .find(|c| c.raw == raw)
+            .map_or_else(|| raw.to_string(), |c| c.label().to_string())
+    )
 }
 
 /// Runs a dialog beside the main loop, one at a time.
@@ -313,18 +327,20 @@ fn spawn_bt(mut s: rfcomm::Session, job: BtJob, device: String, tx: mpsc::Sender
                 let bat = s.read(d, gnp::CMD_STATUS, gnp::SUB_HS_BATTERY).data();
                 (BtData::Battery(bat), !s.is_dead())
             }
-            BtJob::Settings => {
+            BtJob::Settings { edit } => {
                 let rows = s.sweep(d, gnp::CMD_CONFIG, &config::subs());
-                (BtData::Settings(rows), !s.is_dead())
+                (BtData::Settings(rows, edit), !s.is_dead())
             }
-            BtJob::Write {
-                dst,
-                sub,
-                data,
-                told,
-            } => {
-                let ack = s.write(dst, gnp::CMD_CONFIG, sub, &data);
-                (BtData::Written(ack, told), !s.is_dead())
+            BtJob::Write(items) => {
+                let done = items
+                    .into_iter()
+                    .map(|(dst, def, raw, told)| {
+                        let mut data = def.request.to_vec();
+                        data.push(raw);
+                        (told, s.write(dst, gnp::CMD_CONFIG, def.sub, &data))
+                    })
+                    .collect();
+                (BtData::Written(done), !s.is_dead())
             }
         };
         // Only a broken socket ends the session. Which subcommands a device
@@ -351,11 +367,9 @@ async fn config_via_hidraw(path: String) -> Vec<config::Setting> {
     }
 }
 
-/// Overview of the device settings as a table, and the way to change one.
-///
-/// The first column carries the identifier and stays hidden; zenity gives the
-/// selected row back through it, which is what the write needs.
-async fn show_settings(settings: Vec<config::Setting>, tx: mpsc::Sender<Cmd>) {
+/// Overview of the device settings as a table. Read-only; changing one goes
+/// through [`edit_settings`], which has room for a control per setting.
+async fn show_settings(settings: Vec<config::Setting>) {
     let s = strings();
     if settings.is_empty() {
         notify(s.no_settings).await;
@@ -368,13 +382,8 @@ async fn show_settings(settings: Vec<config::Setting>, tx: mpsc::Sender<Cmd>) {
         "--list".to_string(),
         "--title=Jabraw".to_string(),
         format!("--text={}", s.settings.trim_end_matches(" …")),
-        "--width=560".to_string(),
+        "--width=520".to_string(),
         "--height=560".to_string(),
-        "--hide-column=1".to_string(),
-        "--print-column=ALL".to_string(),
-        "--separator=|".to_string(),
-        "--column".to_string(),
-        "id".to_string(),
         // No empty column title: zenity 4 then returns the first row
         // immediately instead of showing the dialog.
         "--column".to_string(),
@@ -385,18 +394,16 @@ async fn show_settings(settings: Vec<config::Setting>, tx: mpsc::Sender<Cmd>) {
         s.value.to_string(),
     ];
     for item in &settings {
-        args.push(item.name.to_string());
         args.push(item.device.to_string());
         args.push(item.label.to_string());
         args.push(format_value(item.kind, item.values, item.raw, &item.value));
     }
-    let picked = match tokio::process::Command::new("zenity")
+    match tokio::process::Command::new("zenity")
         .args(&args)
-        .output()
+        .status()
         .await
     {
-        Ok(out) if out.status.success() => String::from_utf8_lossy(&out.stdout).trim().to_string(),
-        Ok(_) => return,
+        Ok(_) => {}
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
             let text: Vec<String> = settings
                 .iter()
@@ -410,58 +417,86 @@ async fn show_settings(settings: Vec<config::Setting>, tx: mpsc::Sender<Cmd>) {
                 })
                 .collect();
             notify(&text.join("\n")).await;
-            return;
         }
-        Err(e) => return eprintln!("zenity failed: {e}"),
-    };
+        Err(e) => eprintln!("zenity failed: {e}"),
+    }
+}
 
-    let mut fields = picked.split('|');
-    let (Some(name), Some(device)) = (fields.next(), fields.next()) else {
-        return;
-    };
-    let Some(def) = config::SETTINGS.iter().find(|d| d.name == name) else {
-        return;
-    };
+/// One form with a drop-down per setting that can be changed.
+///
+/// A single dialog rather than a list to pick from and a second list to answer
+/// with: every setting shows its current value in the label, every drop-down
+/// starts on "leave as it is", and OK sends only what actually moved.
+async fn edit_settings(settings: Vec<config::Setting>, tx: mpsc::Sender<Cmd>) {
+    let s = strings();
     // A value that shares its byte with the neighbours would need the rest of
     // that byte carried over, which is not established.
-    if def.values.is_empty() || def.mask != 0 {
-        notify(&format!("{}: {}", def.label(), s.only_shown)).await;
+    let editable: Vec<&config::Setting> = settings
+        .iter()
+        .filter(|i| !i.values.is_empty() && i.raw.is_some())
+        .filter(|i| config::def_of(i.name).is_some_and(|d| d.mask == 0))
+        .collect();
+    if editable.is_empty() {
+        notify(s.only_shown).await;
         return;
     }
 
-    let mut pick = vec![
-        "--list".to_string(),
+    let mut args = vec![
+        "--forms".to_string(),
         "--title=Jabraw".to_string(),
-        format!("--text={} — {}", def.label(), s.choose_value),
-        "--column".to_string(),
-        s.value.to_string(),
+        format!("--text={}", s.edit_settings.trim_end_matches(" …")),
+        "--separator=|".to_string(),
     ];
-    for c in def.values {
-        pick.push(c.label().to_string());
+    for item in &editable {
+        let shown = format_value(item.kind, item.values, item.raw, &item.value);
+        args.push(format!(
+            "--add-combo={} · {} ({}: {shown})",
+            item.device, item.label, s.now
+        ));
+        let mut values = vec![s.unchanged.to_string()];
+        values.extend(item.values.iter().map(|c| c.label().to_string()));
+        args.push(format!("--combo-values={}", values.join("|")));
     }
-    let chosen = match tokio::process::Command::new("zenity")
-        .args(&pick)
+
+    let out = match tokio::process::Command::new("zenity")
+        .args(&args)
         .output()
         .await
     {
         Ok(out) if out.status.success() => String::from_utf8_lossy(&out.stdout).trim().to_string(),
-        _ => return,
+        Ok(_) => return,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            return notify(s.only_shown).await;
+        }
+        Err(e) => return eprintln!("zenity failed: {e}"),
     };
-    let Some(choice) = def.values.iter().find(|c| c.label() == chosen) else {
-        return;
-    };
-    let dst = if device == "Dongle" {
-        gnp::DST_DONGLE
-    } else {
-        gnp::DST_HEADSET
-    };
-    let _ = tx
-        .send(Cmd::SetSetting {
-            name: def.name,
-            dst,
+
+    let mut changes = Vec::new();
+    for (item, picked) in editable.iter().zip(out.split('|')) {
+        let picked = picked.trim();
+        if picked.is_empty() || picked == s.unchanged {
+            continue;
+        }
+        let Some(choice) = item.values.iter().find(|c| c.label() == picked) else {
+            continue;
+        };
+        if Some(choice.raw) == item.raw {
+            continue;
+        }
+        changes.push(Change {
+            name: item.name,
+            dst: if item.device == "Dongle" {
+                gnp::DST_DONGLE
+            } else {
+                gnp::DST_HEADSET
+            },
             raw: choice.raw,
-        })
-        .await;
+        });
+    }
+    if changes.is_empty() {
+        return notify(s.nothing_changed).await;
+    }
+    let _ = tx.send(Cmd::SetSettings(changes)).await;
 }
 
 /// A named value wins; a switch reads as off and on; anything else keeps its
@@ -811,13 +846,19 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
                         show_device_info(&info, battery, charging).await
                     });
                 }
-                Cmd::ShowSettings => {
+                c @ (Cmd::ShowSettings | Cmd::ShowEditor) => {
+                    let edit = matches!(c, Cmd::ShowEditor);
                     // Over hidraw when a dongle is plugged in, otherwise
                     // through the existing RFCOMM session.
                     if let Some(path) = watched.iter().next().cloned() {
                         let tx = cmd_tx.clone();
                         spawn_dialog(&dialog_open, async move {
-                            show_settings(config_via_hidraw(path).await, tx).await
+                            let rows = config_via_hidraw(path).await;
+                            if edit {
+                                edit_settings(rows, tx).await
+                            } else {
+                                show_settings(rows).await
+                            }
                         });
                     } else if !bt_busy {
                         // The sweep goes through the same job as the reads;
@@ -825,7 +866,44 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
                         if let Some(p) = bt_path.clone() {
                             if let Some(s) = session.take() {
                                 bt_busy = true;
-                                spawn_bt(s, BtJob::Settings, p, bt_tx.clone());
+                                spawn_bt(s, BtJob::Settings { edit }, p, bt_tx.clone());
+                            }
+                        }
+                    }
+                }
+                Cmd::SetSettings(changes) => {
+                    let items: Vec<(u8, &'static config::Def, u8, String)> = changes
+                        .iter()
+                        .filter_map(|c| {
+                            let def = config::def_of(c.name)?;
+                            Some((c.dst, def, c.raw, told_about(def, c.raw)))
+                        })
+                        .collect();
+                    if items.is_empty() {
+                        continue;
+                    }
+                    if let Some(path) = watched.iter().next().cloned() {
+                        tokio::spawn(async move {
+                            let done = tokio::task::spawn_blocking(move || {
+                                items
+                                    .into_iter()
+                                    .map(|(dst, def, raw, told)| {
+                                        let ack = config::write(&path, dst, def, raw)
+                                            .ok()
+                                            .flatten();
+                                        (told, ack)
+                                    })
+                                    .collect()
+                            })
+                            .await
+                            .unwrap_or_default();
+                            report_writes(done).await;
+                        });
+                    } else if !bt_busy {
+                        if let Some(p) = bt_path.clone() {
+                            if let Some(s) = session.take() {
+                                bt_busy = true;
+                                spawn_bt(s, BtJob::Write(items), p, bt_tx.clone());
                             }
                         }
                     }
@@ -833,32 +911,6 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
                 // Refresh the device list when the menu opens, so the rare
                 // polling interval cannot leave stale entries.
                 Cmd::Refresh => sinks = audio::list_sinks().await,
-                Cmd::SetSetting { name, dst, raw } => {
-                    let Some(def) = config::def_of(name) else {
-                        continue;
-                    };
-                    let told = format!("{} {} {}", def.label(), strings().set_to,
-                        def.values.iter().find(|c| c.raw == raw)
-                            .map_or_else(|| raw.to_string(), |c| c.label().to_string()));
-                    if let Some(path) = watched.iter().next().cloned() {
-                        tokio::spawn(async move {
-                            let out = tokio::task::spawn_blocking(move || {
-                                config::write(&path, dst, def, raw)
-                            })
-                            .await;
-                            report_write(matches!(out, Ok(Ok(Some(gnp::Ack::Ok)))), &told, out.ok().and_then(|r| r.ok()).flatten()).await;
-                        });
-                    } else if !bt_busy {
-                        if let Some(p) = bt_path.clone() {
-                            if let Some(s) = session.take() {
-                                let mut data = def.request.to_vec();
-                                data.push(raw);
-                                bt_busy = true;
-                                spawn_bt(s, BtJob::Write { dst, sub: def.sub, data, told }, p, bt_tx.clone());
-                            }
-                        }
-                    }
-                }
                 Cmd::Quit => {
                     if let Some(handle) = &tray {
                         handle.shutdown().await;
@@ -907,14 +959,18 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
                                 .map(|p| (p, gnp::battery_charging(d)));
                         }
                     }
-                    BtData::Written(ack, told) => {
-                        report_write(ack == Some(gnp::Ack::Ok), &told, ack).await;
+                    BtData::Written(done) => {
+                        report_writes(done).await;
                     }
-                    BtData::Settings(rows) => {
+                    BtData::Settings(rows, edit) => {
                         let rows = config::from_sweep(rows);
                         let tx = cmd_tx.clone();
                         spawn_dialog(&dialog_open, async move {
-                            show_settings(rows, tx).await
+                            if edit {
+                                edit_settings(rows, tx).await
+                            } else {
+                                show_settings(rows).await
+                            }
                         });
                     }
                 }

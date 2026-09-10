@@ -24,13 +24,17 @@ pub enum Cmd {
     ShowSettings,
     Refresh,
     SetSink(u32),
-    /// A value picked in the settings dialog, on its way to the device.
-    SetSetting {
-        name: &'static str,
-        dst: u8,
-        raw: u8,
-    },
+    ShowEditor,
+    /// What the form dialog came back with, on its way to the device.
+    SetSettings(Vec<Change>),
     Quit,
+}
+
+/// One value a user picked, and where it goes.
+pub struct Change {
+    pub name: &'static str,
+    pub dst: u8,
+    pub raw: u8,
 }
 
 pub struct HeadsetTray {
@@ -260,6 +264,15 @@ impl ksni::Tray for HeadsetTray {
                 // GNP runs over the dongle and over Bluetooth alike.
                 enabled: self.has_gnp,
                 activate: Box::new(|this: &mut Self| this.send(Cmd::ShowSettings)),
+                ..Default::default()
+            }
+            .into(),
+        );
+        items.push(
+            StandardItem {
+                label: s.edit_settings.into(),
+                enabled: self.has_gnp,
+                activate: Box::new(|this: &mut Self| this.send(Cmd::ShowEditor)),
                 ..Default::default()
             }
             .into(),
