@@ -87,7 +87,7 @@ impl Session {
         let seq = self.next_seq();
         if self
             .file
-            .write_all(&gnp::read_body(dst, seq, cmd, sub))
+            .write_all(&gnp::read_body(dst, seq, cmd, sub, &[]))
             .is_err()
         {
             self.dead = true;
@@ -124,14 +124,14 @@ impl Session {
         &mut self,
         dst: u8,
         cmd: u8,
-        subs: &[(u8, &'static str)],
+        subs: &[(u8, &'static str, &'static [u8])],
     ) -> Vec<(&'static str, Vec<u8>)> {
         let mut pending = std::collections::HashMap::new();
-        for (sub, name) in subs {
+        for (sub, name, data) in subs {
             let seq = self.next_seq();
             if self
                 .file
-                .write_all(&gnp::read_body(dst, seq, cmd, *sub))
+                .write_all(&gnp::read_body(dst, seq, cmd, *sub, data))
                 .is_err()
             {
                 self.dead = true;

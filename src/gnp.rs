@@ -44,23 +44,23 @@ pub const SUB_VERSION: u8 = 3;
 /// The bare packet header of a read request, without transport wrapping.
 ///
 /// Over hidraw the report id goes in front, over RFCOMM nothing does. Both
-/// checked against the hardware.
-pub fn read_body(dst: u8, seq: u8, cmd: u8, sub: u8) -> [u8; HEADER_LEN] {
-    [
-        dst,
-        SRC_PC,
-        seq,
-        (TYPE_READ << 6) | HEADER_LEN as u8,
-        cmd,
-        sub,
-    ]
+/// checked against the hardware. `data` selects a sub-item where a subcommand
+/// addresses several; most take none.
+pub fn read_body(dst: u8, seq: u8, cmd: u8, sub: u8, data: &[u8]) -> Vec<u8> {
+    // The length lives in six bits, so a packet cannot exceed 63 bytes.
+    let data = &data[..data.len().min(REPORT_SIZE - HEADER_LEN)];
+    let len = HEADER_LEN + data.len();
+    let mut out = vec![dst, SRC_PC, seq, (TYPE_READ << 6) | len as u8, cmd, sub];
+    out.extend_from_slice(data);
+    out
 }
 
 /// Read request for the hidraw node: the leading byte is the report id.
-pub fn read_request(dst: u8, seq: u8, cmd: u8, sub: u8) -> [u8; 1 + REPORT_SIZE] {
+pub fn read_request(dst: u8, seq: u8, cmd: u8, sub: u8, data: &[u8]) -> [u8; 1 + REPORT_SIZE] {
+    let body = read_body(dst, seq, cmd, sub, data);
     let mut out = [0u8; 1 + REPORT_SIZE];
     out[0] = REPORT_ID;
-    out[1..1 + HEADER_LEN].copy_from_slice(&read_body(dst, seq, cmd, sub));
+    out[1..1 + body.len()].copy_from_slice(&body);
     out
 }
 
@@ -136,7 +136,7 @@ mod tests {
 
     #[test]
     fn a_request_is_not_a_response() {
-        let req = read_body(DST_HEADSET, 7, CMD_IDENT, SUB_NAME);
+        let req = read_body(DST_HEADSET, 7, CMD_IDENT, SUB_NAME, &[]);
         assert!(parse_body(&req).is_none());
     }
 

@@ -351,7 +351,7 @@ async fn show_settings(settings: Vec<config::Setting>) {
     for item in &settings {
         args.push(item.device.to_string());
         args.push(item.label.to_string());
-        args.push(format_value(item.kind, item.values, &item.value));
+        args.push(format_value(item.kind, item.values, item.raw, &item.value));
     }
     match tokio::process::Command::new("zenity")
         .args(&args)
@@ -367,7 +367,7 @@ async fn show_settings(settings: Vec<config::Setting>) {
                         "{} {}: {}",
                         i.device,
                         i.label,
-                        format_value(i.kind, i.values, &i.value)
+                        format_value(i.kind, i.values, i.raw, &i.value)
                     )
                 })
                 .collect();
@@ -379,10 +379,15 @@ async fn show_settings(settings: Vec<config::Setting>) {
 
 /// A named value wins; a switch reads as off and on; anything else keeps its
 /// number rather than being dressed up as something it may not be.
-fn format_value(kind: config::Kind, values: &[config::Choice], data: &[u8]) -> String {
+fn format_value(
+    kind: config::Kind,
+    values: &[config::Choice],
+    raw: Option<u8>,
+    data: &[u8],
+) -> String {
     let s = strings();
-    if let [v] = data {
-        if let Some(c) = values.iter().find(|c| c.raw == *v) {
+    if let Some(v) = raw {
+        if let Some(c) = values.iter().find(|c| c.raw == v) {
             return c.label().to_string();
         }
     }
@@ -555,7 +560,7 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
                             (gnp::DST_HEADSET, gnp::SUB_SERIAL),
                         ] {
                             seq = seq.wrapping_add(1);
-                            let req = gnp::read_request(dst, seq, gnp::CMD_IDENT, sub);
+                            let req = gnp::read_request(dst, seq, gnp::CMD_IDENT, sub, &[]);
                             if w.write_all(&req).is_ok() {
                                 pending.insert(seq, Pending::Ident { dst, sub });
                             }
@@ -576,6 +581,7 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
                         seq,
                         gnp::CMD_STATUS,
                         gnp::SUB_HS_BATTERY,
+                        &[],
                     );
                     for w in writers.values_mut() {
                         let _ = w.write_all(&req);
@@ -901,11 +907,11 @@ mod tests {
     fn a_choice_without_names_keeps_its_number() {
         let none: &[super::config::Choice] = &[];
         assert_eq!(
-            super::format_value(super::config::Kind::Choice, none, &[0]),
+            super::format_value(super::config::Kind::Choice, none, Some(0), &[0]),
             "0"
         );
         assert_ne!(
-            super::format_value(super::config::Kind::Switch, none, &[0]),
+            super::format_value(super::config::Kind::Switch, none, Some(0), &[0]),
             "0"
         );
     }
@@ -918,11 +924,11 @@ mod tests {
             .find(|d| d.name == "soundMode")
             .unwrap();
         assert_eq!(
-            super::format_value(d.kind, d.values, &[0]),
+            super::format_value(d.kind, d.values, Some(0), &[0]),
             d.values[0].label()
         );
         // A byte the table does not name falls back to the number.
-        assert_eq!(super::format_value(d.kind, d.values, &[9]), "9");
+        assert_eq!(super::format_value(d.kind, d.values, Some(9), &[9]), "9");
     }
 
     #[test]
